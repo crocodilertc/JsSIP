@@ -56,7 +56,8 @@ UA = function(configuration) {
     'unregistered',
     'registrationFailed',
     'newRTCSession',
-    'newMessage'
+    'newMessage',
+    'newOptions'
   ];
 
   // Set Accepted Body Types
@@ -424,10 +425,22 @@ UA.prototype.receiveRequest = function(request) {
    * They are processed as if they had been received outside the dialog.
    */
   if(method === JsSIP.C.OPTIONS) {
-    request.reply(200, null, [
+    var extraHeaders = [
       'Allow: '+ JsSIP.Utils.getAllowedMethods(this),
       'Accept: '+ C.ACCEPTED_BODY_TYPES
-    ]);
+    ];
+    
+    if (!this.checkEvent('newOptions') || this.listeners('newOptions').length === 0) {
+      request.reply(200, null, extraHeaders);
+    } else {
+      this.emit('newOptions', this, {
+        originator: 'remote',
+        request: request,
+        extraHeaders: extraHeaders
+      });      
+    }
+    
+    return;
   } else if (method === JsSIP.C.MESSAGE) {
     if (!this.checkEvent('newMessage') || this.listeners('newMessage').length === 0) {
       request.reply(405, null, ['Allow: '+ JsSIP.Utils.getAllowedMethods(this)]);
@@ -435,6 +448,8 @@ UA.prototype.receiveRequest = function(request) {
     }
     message = new JsSIP.Message(this);
     message.init_incoming(request);
+    
+    return;
   }
 
   // Initial Request
