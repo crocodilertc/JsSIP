@@ -447,7 +447,7 @@ UA.prototype.receiveRequest = function(request) {
 
     switch(method) {
       case JsSIP.C.INVITE:
-        if(JsSIP.WebRTC.isSupported) {
+        if(!this.configuration.handle_media || JsSIP.WebRTC.isSupported) {
           session = new JsSIP.RTCSession(this);
           session.init_incoming(request);
         } else {
@@ -669,6 +669,7 @@ UA.prototype.loadConfig = function(configuration) {
       no_answer_timeout: 60,
       stun_servers: ['stun:stun.l.google.com:19302'],
       turn_servers: [],
+      handle_media: true,
 
       // Logging parameters
       trace_sip: false,
@@ -842,6 +843,7 @@ UA.configuration_skeleton = (function() {
       "display_name",
       "hack_via_tcp", // false.
       "hack_ip_in_contact", //false
+      "handle_media", //true
       "no_answer_timeout", // 30 seconds.
       "password",
       "register_expires", // 600 seconds.
@@ -1004,6 +1006,12 @@ UA.configuration_check = {
     hack_ip_in_contact: function(hack_ip_in_contact) {
       if (typeof hack_ip_in_contact === 'boolean') {
         return hack_ip_in_contact;
+      }
+    },
+
+    handle_media: function(handle_media) {
+      if (typeof handle_media === 'boolean') {
+        return handle_media;
       }
     },
 

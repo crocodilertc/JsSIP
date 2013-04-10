@@ -159,6 +159,7 @@ RTCSession.prototype.answer = function(options) {
     request = this.request,
     extraHeaders = options.extraHeaders || [],
     mediaConstraints = options.mediaConstraints || {'audio':true, 'video':true},
+    sdp = options.sdp,
 
     // User media succeeded
     userMediaSucceeded = function(stream) {
@@ -282,11 +283,17 @@ RTCSession.prototype.answer = function(options) {
 
   window.clearTimeout(this.timers.userNoAnswerTimer);
 
-  this.rtcMediaHandler.getUserMedia(
-    userMediaSucceeded,
-    userMediaFailed,
-    mediaConstraints
-  );
+  if (sdp) {
+    // Use the application-provided SDP
+    answerCreationSucceeded(sdp);
+  } else {
+    // Handle PeerConnection, SDP, etc internally
+    this.rtcMediaHandler.getUserMedia(
+      userMediaSucceeded,
+      userMediaFailed,
+      mediaConstraints
+    );
+  }
 };
 
 /**
@@ -421,51 +428,72 @@ RTCSession.prototype.init_incoming = function(request) {
     return;
   }
 
-  //Initialize Media Session
-  this.rtcMediaHandler = new RTCMediaHandler(this);
-  this.rtcMediaHandler.onMessage(
-    'offer',
-    request.body,
-    /*
-     * onSuccess
-     * SDP Offer is valid. Fire UA newRTCSession
-     */
-    function() {
-      request.reply(180, null, ['Contact: ' + self.contact]);
-      self.status = C.STATUS_WAITING_FOR_ANSWER;
+  // Set up reply/media handling functions
+  var sdpValid = function() {
+    request.reply(180, null, ['Contact: ' + self.contact]);
+    self.status = C.STATUS_WAITING_FOR_ANSWER;
 
-      // Set userNoAnswerTimer
-      self.timers.userNoAnswerTimer = window.setTimeout(function() {
-          request.reply(408);
-          self.failed('local',null, JsSIP.C.causes.NO_ANSWER);
-        }, self.ua.configuration.no_answer_timeout
+    // Set userNoAnswerTimer
+    self.timers.userNoAnswerTimer = window.setTimeout(function() {
+        request.reply(408);
+        self.failed('local',null, JsSIP.C.causes.NO_ANSWER);
+      }, self.ua.configuration.no_answer_timeout
+    );
+
+    /* Set expiresTimer
+     * RFC3261 13.3.1
+     */
+    if (expires) {
+      self.timers.expiresTimer = window.setTimeout(function() {
+          if(self.status === C.STATUS_WAITING_FOR_ANSWER) {
+            request.reply(487);
+            self.failed('system', null, JsSIP.C.causes.EXPIRES);
+          }
+        }, expires
       );
-
-      /* Set expiresTimer
-       * RFC3261 13.3.1
-       */
-      if (expires) {
-        self.timers.expiresTimer = window.setTimeout(function() {
-            if(self.status === C.STATUS_WAITING_FOR_ANSWER) {
-              request.reply(487);
-              self.failed('system', null, JsSIP.C.causes.EXPIRES);
-            }
-          }, expires
-        );
-      }
-
-      self.newRTCSession('remote', request);
-    },
-    /*
-     * onFailure
-     * Bad media description
-     */
-    function(e) {
-      console.warn(LOG_PREFIX +'invalid SDP');
-      console.warn(e);
-      request.reply(488);
     }
-  );
+  },
+  
+  sdpInvalid = function () {
+    request.reply(488);
+    self.failed('remote', request, JsSIP.C.causes.BAD_MEDIA_DESCRIPTION);
+  },
+  
+  handleMedia = function() {
+    self.rtcMediaHandler = new RTCMediaHandler(self);
+    self.rtcMediaHandler.onMessage(
+      'offer',
+      request.body,
+      /*
+       * onSuccess
+       * SDP Offer is valid. Fire UA newRTCSession
+       */
+      function() {
+        sdpValid();
+        self.newRTCSession('remote', request);
+      },
+      /*
+       * onFailure
+       * Bad media description
+       */
+      function(e) {
+        console.warn(LOG_PREFIX +'invalid SDP');
+        console.warn(e);
+        sdpInvalid();
+      }
+    );
+  };
+
+  if (this.ua.configuration.handle_media) {
+    //Initialize Media Session
+    handleMedia();
+  } else {
+    /* Just notify the application of the new session.  It is responsible for
+     * processing the SDP, and must call sdpValid() or sdpInvalid() as
+     * appropriate.
+     */
+    this.newRTCSession('remote', request, sdpValid, sdpInvalid, handleMedia);
+  }
 };
 
 /**
@@ -479,7 +507,8 @@ RTCSession.prototype.connect = function(target, options) {
     eventHandlers = options.eventHandlers || {},
     extraHeaders = options.extraHeaders || [],
     mediaConstraints = options.mediaConstraints || {audio: true, video: true},
-    RTCConstraints = options.RTCConstraints || {};
+    RTCConstraints = options.RTCConstraints || {},
+    sdp = options.sdp;
 
   if (target === undefined) {
     throw new TypeError('Not enough arguments');
@@ -505,7 +534,9 @@ RTCSession.prototype.connect = function(target, options) {
 
   // Session parameter initialization
   this.from_tag = JsSIP.Utils.newTag();
-  this.rtcMediaHandler = new RTCMediaHandler(this, RTCConstraints);
+  if (!sdp) {
+    this.rtcMediaHandler = new RTCMediaHandler(this, RTCConstraints);
+  }
 
   // Set anonymous property
   this.anonymous = options.anonymous;
@@ -547,7 +578,18 @@ RTCSession.prototype.connect = function(target, options) {
   } else if (!JsSIP.WebRTC.isSupported) {
     this.failed('local', null, JsSIP.C.causes.WEBRTC_NOT_SUPPORTED);
   } else {
-    this.sendInitialRequest(mediaConstraints);
+    if (sdp) {
+      // Send the request now
+      var request_sender = new JsSIP.RequestSender(this, this.ua);
+      
+      this.request.body = sdp;
+      this.status = C.STATUS_INVITE_SENT;
+      
+      request_sender.send();
+    } else {
+      // Jump through some extra hoops to get media, SDP, etc
+      this.sendInitialRequest(mediaConstraints);
+    }
   }
 };
 
@@ -698,6 +740,7 @@ RTCSession.prototype.receiveRequest = function(request) {
       case JsSIP.C.INVITE:
         if(this.status === C.STATUS_CONFIRMED) {
           console.log(LOG_PREFIX +'re-INVITE received');
+          // TODO: handle this and respond
         }
         break;
       case JsSIP.C.INFO:
@@ -762,6 +805,7 @@ RTCSession.prototype.sendInitialRequest = function(constraints) {
      return;
    }
 
+   request_sender = new JsSIP.RequestSender(self, this.ua),
    self.request.body = offer;
    self.status = C.STATUS_INVITE_SENT;
    request_sender.send();
@@ -836,34 +880,49 @@ RTCSession.prototype.receiveResponse = function(response) {
         this.failed('remote', response, JsSIP.C.causes.BAD_MEDIA_DESCRIPTION);
         break;
       }
-
-      this.rtcMediaHandler.onMessage(
-        'answer',
-        response.body,
-        /*
-         * onSuccess
-         * SDP Answer fits with Offer. Media will start
-         */
-        function() {
-          // An error on dialog creation will fire 'failed' event
-          if (!session.createDialog(response, 'UAC')) {
-            return;
-          }
-
-          session.sendACK();
-          session.status = C.STATUS_CONFIRMED;
-          session.started('remote', response);
-        },
-        /*
-         * onFailure
-         * SDP Answer does not fit the Offer. Accept the call and Terminate.
-         */
-        function(e) {
-          console.warn(e);
-          session.acceptAndTerminate(response, 488, 'Not Acceptable Here');
-          session.failed('remote', response, JsSIP.C.causes.BAD_MEDIA_DESCRIPTION);
+      
+      var sdpValid = function () {
+        // An error on dialog creation will fire 'failed' event
+        if (!session.createDialog(response, 'UAC')) {
+          return;
         }
-      );
+
+        session.sendACK();
+        session.status = C.STATUS_CONFIRMED;
+      },
+      
+      sdpInvalid = function () {
+        session.acceptAndTerminate(response, 488, 'Not Acceptable Here');
+        session.failed('remote', response, JsSIP.C.causes.BAD_MEDIA_DESCRIPTION);
+      };
+
+      if (this.rtcMediaHandler) {
+        // We're handling the SDP, media, peer connection, etc
+        this.rtcMediaHandler.onMessage(
+            'answer',
+            response.body,
+            /*
+             * onSuccess
+             * SDP Answer fits with Offer. Media will start
+             */
+            function() {
+              sdpValid();
+              session.started('remote', response);
+            },
+            /*
+             * onFailure
+             * SDP Answer does not fit the Offer. Accept the call and Terminate.
+             */
+            function(e) {
+              console.warn(e);
+              sdpInvalid();
+            }
+          );
+      } else {
+        // The application is responsible for handling the media.
+        // It must call sdpValid() or sdpInvalid() as appropriate.
+        session.started('remote', response, sdpValid, sdpInvalid);
+      }
       break;
     default:
       cause = JsSIP.Utils.sipErrorCause(response.status_code);
@@ -968,7 +1027,7 @@ RTCSession.prototype.onRequestTimeout = function() {
 /**
  * @private
  */
-RTCSession.prototype.newRTCSession = function(originator, request) {
+RTCSession.prototype.newRTCSession = function(originator, request, sdpValid, sdpInvalid, handleMedia) {
   var session = this,
     event_name = 'newRTCSession';
 
@@ -985,7 +1044,10 @@ RTCSession.prototype.newRTCSession = function(originator, request) {
   session.ua.emit(event_name, session.ua, {
     originator: originator,
     session: session,
-    request: request
+    request: request,
+    sdpValid: sdpValid || null,
+    sdpInvalid: sdpInvalid || null,
+    handleMedia: handleMedia || null
   });
 };
 
@@ -1018,14 +1080,16 @@ RTCSession.prototype.progress = function(originator, response) {
 /**
  * @private
  */
-RTCSession.prototype.started = function(originator, message) {
+RTCSession.prototype.started = function(originator, message, sdpValid, sdpInvalid) {
   var session = this,
     event_name = 'started';
 
   session.start_time = new Date();
 
   session.emit(event_name, session, {
-    response: message || null
+    response: message || null,
+    sdpValid: sdpValid || null,
+    sdpInvalid: sdpInvalid || null
   });
 };
 
