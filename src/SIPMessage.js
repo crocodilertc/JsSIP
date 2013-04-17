@@ -357,9 +357,7 @@ IncomingRequest.prototype.reply = function(code, reason, extraHeaders, body, onS
     response += 'Via: ' + this.getHeader('via', v) + '\r\n';
   }
 
-  if(!this.to_tag) {
-    to += ';tag=' + JsSIP.Utils.newTag();
-  } else if(this.to_tag && !this.s('to').hasParam('tag')) {
+  if(this.to_tag && !this.s('to').hasParam('tag')) {
     to += ';tag=' + this.to_tag;
   }
 
@@ -414,9 +412,7 @@ IncomingRequest.prototype.reply_sl = function(code, reason) {
 
   to = this.getHeader('To');
 
-  if(!this.to_tag) {
-    to += ';tag=' + JsSIP.Utils.newTag();
-  } else if(this.to_tag && !this.s('to').hasParam('tag')) {
+  if(this.to_tag && !this.s('to').hasParam('tag')) {
     to += ';tag=' + this.to_tag;
   }
 
