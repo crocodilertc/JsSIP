@@ -508,6 +508,7 @@ RTCSession.prototype.connect = function(target, options) {
     extraHeaders = options.extraHeaders || [],
     mediaConstraints = options.mediaConstraints || {audio: true, video: true},
     RTCConstraints = options.RTCConstraints || {},
+    featureTags = options.featureTags || '',
     sdp = options.sdp;
 
   if (target === undefined) {
@@ -550,7 +551,7 @@ RTCSession.prototype.connect = function(target, options) {
   this.contact = this.ua.contact.toString({
     anonymous: this.anonymous,
     outbound: true
-  });
+  }) + featureTags;
 
   if (this.anonymous) {
     requestParams.from_display_name = 'Anonymous';
