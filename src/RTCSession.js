@@ -135,6 +135,10 @@ RTCSession.prototype.terminate = function(options) {
       this.failed('local', null, JsSIP.C.causes.REJECTED);
       break;
     case C.STATUS_WAITING_FOR_ACK:
+      // TODO: fix this - RFC 3261 section 15:
+      // "...the callee's UA MUST NOT send a BYE on a confirmed dialog
+      // until it has received an ACK for its 2xx response or until the server
+      // transaction times out."
     case C.STATUS_CONFIRMED:
       console.log(LOG_PREFIX +'terminating RTCSession');
 
@@ -576,8 +580,6 @@ RTCSession.prototype.connect = function(target, options) {
 
   if (invalidTarget) {
     this.failed('local', null, JsSIP.C.causes.INVALID_TARGET);
-  } else if (!JsSIP.WebRTC.isSupported) {
-    this.failed('local', null, JsSIP.C.causes.WEBRTC_NOT_SUPPORTED);
   } else {
     if (sdp) {
       // Send the request now
@@ -1088,6 +1090,7 @@ RTCSession.prototype.started = function(originator, message, sdpValid, sdpInvali
   session.start_time = new Date();
 
   session.emit(event_name, session, {
+    originator: originator,
     response: message || null,
     sdpValid: sdpValid || null,
     sdpInvalid: sdpInvalid || null

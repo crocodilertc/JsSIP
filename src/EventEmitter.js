@@ -158,11 +158,19 @@ EventEmitter.prototype = {
 
     if (e) {
       for (idx; idx<length; idx++) {
-        listeners[idx].apply(null, [e]);
+        try {
+          listeners[idx].apply(null, [e]);
+        } catch (ex) {
+          console.warn(LOG_PREFIX + 'event handler threw exception:\n', ex.stack);
+        }
       }
     } else {
       for (idx; idx<length; idx++) {
-        listeners[idx].call();
+        try {
+          listeners[idx].call();
+        } catch (ex) {
+          console.warn(LOG_PREFIX + 'event handler threw exception:\n', ex.stack);
+        }
       }
     }
 
