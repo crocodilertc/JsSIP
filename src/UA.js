@@ -226,10 +226,29 @@ UA.prototype.stop = function() {
   }
 
   this.status = C.STATUS_USER_CLOSED;
-  this.shutdownGraceTimer = window.setTimeout(
-    function() { ua.transport.disconnect(); },
-    '5000'
-  );
+  if (!this.isAnyTransactionOutstanding()) {
+    // Disconnect now, no grace time needed
+    ua.transport.disconnect();
+  } else {
+    // Run a grace timer to allow outstanding transactions to complete if
+    // possible, but disconnect before that if they do complete.
+    this.transactionCheckTimer = window.setInterval(function () {
+      if (!ua.isAnyTransactionOutstanding()) {
+        // Disconnect now
+        window.clearInterval(ua.transactionCheckTimer);
+        window.clearTimeout(ua.shutdownGraceTimer);
+        ua.transport.disconnect();
+      }
+    }, 500);
+
+    this.shutdownGraceTimer = window.setTimeout(
+      function() {
+        window.clearInterval(ua.transactionCheckTimer);
+        ua.transport.disconnect();
+      },
+      '5000'
+    );
+  }
 };
 
 /**
@@ -279,6 +298,17 @@ UA.prototype.getCredentials = function(request) {
   return credentials;
 };
 
+UA.prototype.isAnyTransactionOutstanding = function() {
+  var client_transactions = ['nict', 'ict', 'nist', 'ist'];
+
+  for(var type in client_transactions) {
+    for(var idx in this.transactions[client_transactions[type]]) {
+      return !!idx;
+    }
+  }
+
+  return false;
+};
 
 //==========================
 // Event Handlers
