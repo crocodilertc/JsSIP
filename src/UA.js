@@ -482,8 +482,8 @@ UA.prototype.receiveRequest = function(request) {
     return;
   }
 
-  // Initial Request
   if(!request.to_tag) {
+    // Initial Request
     if(!this.isRegistered()) {
       // High user does not want to be contacted
       request.reply(410);
@@ -505,11 +505,11 @@ UA.prototype.receiveRequest = function(request) {
         request.reply(481);
         break;
       case JsSIP.C.CANCEL:
-        request.reply(200);
         session = this.findSession(request);
         if(session) {
           session.receiveRequest(request);
         } else {
+          request.reply(481);
           console.warn(LOG_PREFIX +'received CANCEL request for a non existent session');
         }
         break;
@@ -523,9 +523,8 @@ UA.prototype.receiveRequest = function(request) {
         request.reply(405);
         break;
     }
-  }
-  // In-dialog request
-  else {
+  } else {
+    // In-dialog request
     dialog = this.findDialog(request);
 
     if(dialog) {

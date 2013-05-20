@@ -41,7 +41,7 @@ RTCSession = function(ua) {
   this.ua = ua;
   this.status = C.STATUS_NULL;
   this.dialog = null;
-  this.earlyDialogs = [];
+  this.earlyDialogs = {};
   this.rtcMediaHandler = null;
 
   // Session Timers
@@ -202,6 +202,7 @@ RTCSession.prototype.answer = function(options) {
       var
         // run for reply success callback
         replySucceeded = function() {
+          var retransmissions = 1;
           self.status = C.STATUS_WAITING_FOR_ACK;
 
           /**
@@ -209,17 +210,16 @@ RTCSession.prototype.answer = function(options) {
            * Response retransmissions cannot be accomplished by transaction layer
            *  since it is destroyed when receiving the first 2xx answer
            */
-          self.timers.invite2xxTimer = window.setTimeout(function invite2xxRetransmission(retransmissions) {
-              retransmissions = retransmissions || 1;
-
+          self.timers.invite2xxTimer = window.setTimeout(function invite2xxRetransmission() {
               var timeout = JsSIP.Timers.T1 * (Math.pow(2, retransmissions));
 
               if((retransmissions * JsSIP.Timers.T1) <= JsSIP.Timers.T2) {
+                console.log(LOG_PREFIX +'Retransmitting 2xx:', retransmissions);
                 retransmissions += 1;
 
                 request.reply(200, null, ['Contact: '+ self.contact], body);
 
-                self.timers.invite2xxTimer = window.setTimeout(invite2xxRetransmission(retransmissions),
+                self.timers.invite2xxTimer = window.setTimeout(invite2xxRetransmission,
                   timeout
                 );
               } else {
@@ -643,11 +643,19 @@ RTCSession.prototype.close = function() {
  * Dialog Management
  * @private
  */
+RTCSession.prototype.calcDialogId = function(message, type) {
+  var local_tag = (type === 'UAS') ? message.to_tag : message.from_tag,
+    remote_tag = (type === 'UAS') ? message.from_tag : message.to_tag;
+    return message.call_id + local_tag + remote_tag;
+};
+
+/**
+ * Dialog Management
+ * @private
+ */
 RTCSession.prototype.createDialog = function(message, type, early) {
   var dialog, early_dialog,
-    local_tag = (type === 'UAS') ? message.to_tag : message.from_tag,
-    remote_tag = (type === 'UAS') ? message.from_tag : message.to_tag,
-    id = message.call_id + local_tag + remote_tag;
+    id = this.calcDialogId(message, type);
 
     early_dialog = this.earlyDialogs[id];
 
@@ -713,16 +721,17 @@ RTCSession.prototype.receiveRequest = function(request) {
     * established.
     */
 
-    // Reply 487
-    this.request.reply(487);
-
-    /*
-    * Terminate the whole session in case the user didn't accept nor reject the
-    *request opening the session.
-    */
     if(this.status === C.STATUS_WAITING_FOR_ANSWER) {
+      // No response sent yet - terminate the session
       this.status = C.STATUS_CANCELED;
+      // Reply 487 to the INVITE
+      this.request.reply(487);
+      // Reply 200 to the CANCEL
+      request.reply(200);
       this.failed('remote', request, JsSIP.C.causes.CANCELED);
+    } else {
+      // Reply 481 to the CANCEL
+      request.reply(481);
     }
   } else {
     // Requests arriving here are in-dialog requests.
@@ -835,10 +844,31 @@ RTCSession.prototype.sendInitialRequest = function(constraints) {
  * @private
  */
 RTCSession.prototype.receiveResponse = function(response) {
+  switch (response.method) {
+  case JsSIP.C.INVITE:
+    this.receiveInviteResponse(response);
+    break;
+  case JsSIP.C.BYE:
+    // We don't care about the response
+    break;
+  default:
+    console.warn(LOG_PREFIX + 'Unexpected response received:', response);
+    break;
+  }
+};
+
+/**
+ * Reception of Response for Initial Request
+ * @private
+ */
+RTCSession.prototype.receiveInviteResponse = function(response) {
   var cause,
     session = this;
 
-  if(this.status !== C.STATUS_INVITE_SENT && this.status !== C.STATUS_1XX_RECEIVED) {
+  if(this.status !== C.STATUS_INVITE_SENT &&
+      this.status !== C.STATUS_1XX_RECEIVED &&
+      this.status !== C.STATUS_CONFIRMED) {
+    console.warn(LOG_PREFIX +'Unexpected INVITE response:', response);
     return;
   }
 
@@ -873,10 +903,22 @@ RTCSession.prototype.receiveResponse = function(response) {
       this.progress('remote', response);
       break;
     case /^2[0-9]{2}$/.test(response.status_code):
-      // Do nothing if this.dialog is already confirmed
-      if (this.dialog) {
+      if (this.status === C.STATUS_CONFIRMED) {
+        // We already have a confirmed dialog
+        var did = this.calcDialogId(response, 'UAC');
+        if (did === this.dialog.id.toString()) {
+          // Looks like a retransmission - resend ACK
+          console.info(LOG_PREFIX +'Retransmitting ACK');
+          this.sendACK();
+        } else {
+          // Looks like a fork - clear it down gracefully
+          console.info(LOG_PREFIX +'Accepting and terminating fork, did:', did);
+          this.acceptAndTerminate(response);
+        }
+
         break;
       }
+      this.status = C.STATUS_CONFIRMED;
 
       if(!response.body) {
         this.acceptAndTerminate(response, 400, 'Missing session description');
@@ -884,20 +926,12 @@ RTCSession.prototype.receiveResponse = function(response) {
         break;
       }
       
-      var sdpValid = function () {
-        // An error on dialog creation will fire 'failed' event
-        if (!session.createDialog(response, 'UAC')) {
-          return;
-        }
+      // An error on dialog creation will fire 'failed' event
+      if (!this.createDialog(response, 'UAC')) {
+        break;
+      }
 
-        session.sendACK();
-        session.status = C.STATUS_CONFIRMED;
-      },
-      
-      sdpInvalid = function () {
-        session.acceptAndTerminate(response, 488, 'Not Acceptable Here');
-        session.failed('remote', response, JsSIP.C.causes.BAD_MEDIA_DESCRIPTION);
-      };
+      this.sendACK();
 
       if (this.rtcMediaHandler) {
         // We're handling the SDP, media, peer connection, etc
@@ -909,7 +943,6 @@ RTCSession.prototype.receiveResponse = function(response) {
              * SDP Answer fits with Offer. Media will start
              */
             function() {
-              sdpValid();
               session.started('remote', response);
             },
             /*
@@ -918,13 +951,17 @@ RTCSession.prototype.receiveResponse = function(response) {
              */
             function(e) {
               console.warn(e);
-              sdpInvalid();
+              session.sendBye({
+                status_code: 488,
+                reason_phrase: 'Not Acceptable Here'
+              });
+              session.failed('remote', response, JsSIP.C.causes.BAD_MEDIA_DESCRIPTION);
             }
           );
       } else {
         // The application is responsible for handling the media.
-        // It must call sdpValid() or sdpInvalid() as appropriate.
-        session.started('remote', response, sdpValid, sdpInvalid);
+        // It must close the session if the SDP is unacceptable.
+        session.started('remote', response);
       }
       break;
     default:
@@ -939,10 +976,34 @@ RTCSession.prototype.receiveResponse = function(response) {
 */
 RTCSession.prototype.acceptAndTerminate = function(response, status_code, reason_phrase) {
   // Send ACK and BYE
+  // This method may be used with early dialogs - cannot just use confirmed dialog!
+  var did = this.calcDialogId(response, 'UAC');
+  var dialog = null;
+  if (!this.dialog) {
+    // Might as well confirm this dialog
+    if (this.createDialog(response, 'UAC')){
+      dialog = this.dialog;
+    }
+  } else if (this.dialog && did === this.dialog.id.toString()) {
+    // Not sure why we would be accepting and terminating the confirmed dialog...
+    dialog = this.dialog;
+  } else if (this.earlyDialogs[did]) {
+    // Use the existing early dialog
+    dialog = this.earlyDialogs[did];
+  } else {
+    // Unknown dialog - create an early one
+    if (this.createDialog(response, 'UAC', true)) {
+      dialog = this.earlyDialogs[did];
+    }
+  }
+
   // An error on dialog creation will fire 'failed' event
-  if (this.dialog || this.createDialog(response, 'UAC')) {
-    this.sendACK();
+  if (dialog) {
+    this.sendACK({
+      dialog: dialog
+    });
     this.sendBye({
+      dialog: dialog,
       status_code: status_code,
       reason_phrase: reason_phrase
     });
@@ -952,8 +1013,11 @@ RTCSession.prototype.acceptAndTerminate = function(response, status_code, reason
 /**
 * @private
 */
-RTCSession.prototype.sendACK = function() {
-  var request = this.dialog.createRequest(JsSIP.C.ACK);
+RTCSession.prototype.sendACK = function(options) {
+  options = options || {};
+
+  var dialog = options.dialog || this.dialog, 
+    request = dialog.createRequest(JsSIP.C.ACK);
 
   this.sendRequest(request);
 };
@@ -968,7 +1032,8 @@ RTCSession.prototype.sendBye = function(options) {
     status_code = options.status_code,
     reason_phrase = options.reason_phrase || JsSIP.C.REASON_PHRASE[status_code] || '',
     extraHeaders = options.extraHeaders || [],
-    body = options.body;
+    body = options.body,
+    dialog = options.dialog || this.dialog;
 
   if (status_code && (status_code < 200 || status_code >= 700)) {
     throw new TypeError('Invalid status_code: '+ status_code);
@@ -977,7 +1042,7 @@ RTCSession.prototype.sendBye = function(options) {
     extraHeaders.push('Reason: '+ reason);
   }
 
-  request = this.dialog.createRequest(JsSIP.C.BYE, extraHeaders);
+  request = dialog.createRequest(JsSIP.C.BYE, extraHeaders);
   request.body = body;
 
   this.sendRequest(request);
@@ -1083,7 +1148,7 @@ RTCSession.prototype.progress = function(originator, response) {
 /**
  * @private
  */
-RTCSession.prototype.started = function(originator, message, sdpValid, sdpInvalid) {
+RTCSession.prototype.started = function(originator, message) {
   var session = this,
     event_name = 'started';
 
@@ -1091,9 +1156,7 @@ RTCSession.prototype.started = function(originator, message, sdpValid, sdpInvali
 
   session.emit(event_name, session, {
     originator: originator,
-    response: message || null,
-    sdpValid: sdpValid || null,
-    sdpInvalid: sdpInvalid || null
+    response: message || null
   });
 };
 

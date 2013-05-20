@@ -623,6 +623,7 @@ Transactions.checkTransaction = function(ua, request) {
         if(tr.state === C.STATUS_PROCEEDING) {
           return false;
         } else {
+          request.reply_sl(481);
           return true;
         }
       } else {
