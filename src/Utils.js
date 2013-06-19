@@ -186,7 +186,7 @@ Utils= {
     return '192.0.2.' + getOctet(1, 254);
   },
 
-  getAllowedMethods: function(ua) {
+  getAllowedMethods: function(ua, inDialog) {
     var event,
       allowed = JsSIP.UA.C.ALLOWED_METHODS.toString();
 
@@ -194,6 +194,10 @@ Utils= {
       if (ua.checkEvent(event) && ua.listeners(event).length > 0) {
         allowed += ','+ JsSIP.UA.C.EVENT_METHODS[event];
       }
+    }
+
+    if (inDialog) {
+      allowed += ',' + JsSIP.C.UPDATE;
     }
 
     return allowed;

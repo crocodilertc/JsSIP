@@ -254,6 +254,7 @@ RTCSession.prototype.answer = function(options) {
         };
 
       extraHeaders.push('Contact: ' + self.contact);
+      extraHeaders.push('Allow: '+ JsSIP.Utils.getAllowedMethods(self.ua, true));
 
       request.reply(200, null, extraHeaders,
         body,
@@ -566,7 +567,7 @@ RTCSession.prototype.connect = function(target, options) {
   }
 
   extraHeaders.push('Contact: '+ this.contact);
-  extraHeaders.push('Allow: '+ JsSIP.Utils.getAllowedMethods(this.ua));
+  extraHeaders.push('Allow: '+ JsSIP.Utils.getAllowedMethods(this.ua, true));
   extraHeaders.push('Content-Type: application/sdp');
 
   this.request = new JsSIP.OutgoingRequest(JsSIP.C.INVITE, target, this.ua, requestParams, extraHeaders);
@@ -709,6 +710,7 @@ RTCSession.prototype.createDialog = function(message, type, early) {
 /**
  * In dialog Request Reception
  * @private
+ * @returns true if the request is accepted, false otherwise
  */
 RTCSession.prototype.receiveRequest = function(request) {
   var contentType;
@@ -729,41 +731,55 @@ RTCSession.prototype.receiveRequest = function(request) {
       // Reply 200 to the CANCEL
       request.reply(200);
       this.failed('remote', request, JsSIP.C.causes.CANCELED);
-    } else {
-      // Reply 481 to the CANCEL
-      request.reply(481);
+      return true;
     }
-  } else {
-    // Requests arriving here are in-dialog requests.
-    switch(request.method) {
-      case JsSIP.C.ACK:
-        if(this.status === C.STATUS_WAITING_FOR_ACK) {
-          window.clearTimeout(this.timers.ackTimer);
-          window.clearTimeout(this.timers.invite2xxTimer);
-          this.status = C.STATUS_CONFIRMED;
-        }
-        break;
-      case JsSIP.C.BYE:
-        if(this.status === C.STATUS_CONFIRMED) {
-          request.reply(200);
-          this.ended('remote', request, JsSIP.C.causes.BYE);
-        }
-        break;
-      case JsSIP.C.INVITE:
-        if(this.status === C.STATUS_CONFIRMED) {
-          console.log(LOG_PREFIX +'re-INVITE received');
-          // TODO: handle this and respond
-        }
-        break;
-      case JsSIP.C.INFO:
-        if(this.status === C.STATUS_CONFIRMED || this.status === C.STATUS_WAITING_FOR_ACK) {
-          contentType = request.getHeader('content-type');
-          if (contentType && (contentType.match(/^application\/dtmf-relay/i))) {
-            new DTMF(this).init_incoming(request);
-          }
-        }
-    }
+
+    // Reply 481 to the CANCEL
+    request.reply(481);
+    return false;
   }
+
+  // Requests arriving here are in-dialog requests.
+  switch(request.method) {
+    case JsSIP.C.ACK:
+      if(this.status === C.STATUS_WAITING_FOR_ACK) {
+        window.clearTimeout(this.timers.ackTimer);
+        window.clearTimeout(this.timers.invite2xxTimer);
+        this.status = C.STATUS_CONFIRMED;
+      }
+      break;
+    case JsSIP.C.BYE:
+      if(this.status === C.STATUS_CONFIRMED) {
+        request.reply(200);
+        this.ended('remote', request, JsSIP.C.causes.BYE);
+      }
+      break;
+    case JsSIP.C.INVITE:
+      if(this.status === C.STATUS_CONFIRMED) {
+        console.log(LOG_PREFIX +'re-INVITE received');
+        // TODO: handle this and respond
+      }
+      break;
+    case JsSIP.C.INFO:
+      if(this.status === C.STATUS_CONFIRMED || this.status === C.STATUS_WAITING_FOR_ACK) {
+        contentType = request.getHeader('content-type');
+        if (contentType && (contentType.match(/^application\/dtmf-relay/i))) {
+          new DTMF(this).init_incoming(request);
+        }
+      }
+      break;
+    case JsSIP.C.UPDATE:
+      // For now, just support empty UPDATEs (for session timer refreshes)
+      contentType = request.getHeader('content-type');
+      if(contentType || request.body) {
+        request.reply(488);
+        return false;
+      }
+      request.reply(200);
+      break;
+  }
+
+  return true;
 };
 
 

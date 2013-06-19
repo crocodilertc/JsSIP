@@ -138,6 +138,8 @@ Dialog.prototype = {
 
   // RFC 3261 12.2.2
   checkInDialogRequest: function(request) {
+    var retryAfter;
+
     if(!this.remote_seqnum) {
       this.remote_seqnum = request.cseq;
     } else if(request.method !== JsSIP.C.INVITE && request.cseq < this.remote_seqnum) {
@@ -155,7 +157,7 @@ Dialog.prototype = {
       case JsSIP.C.INVITE:
         if(request.cseq < this.remote_seqnum) {
           if(this.state === C.STATUS_EARLY) {
-            var retryAfter = (Math.random() * 10 | 0) + 1;
+            retryAfter = (Math.random() * 10 | 0) + 1;
             request.reply(500, null, ['Retry-After:'+ retryAfter]);
           } else {
             request.reply(500);
@@ -167,16 +169,17 @@ Dialog.prototype = {
           request.reply(491);
           return false;
         }
-        // RFC3261 12.2.2 Replace the dialog`s remote target URI
-        if(request.hasHeader('contact')) {
-          this.remote_target = request.parseHeader('contact').uri;
-        }
         break;
-      case JsSIP.C.NOTIFY:
-        // RFC6655 3.2 Replace the dialog`s remote target URI
-        if(request.hasHeader('contact')) {
-          this.remote_target = request.parseHeader('contact').uri;
+      case JsSIP.C.UPDATE:
+        // RFC3311 5.2
+        if(this.last_update_tx) {
+          if(this.last_update_tx.state !== JsSIP.Transactions.C.STATUS_COMPLETED) {
+            retryAfter = (Math.random() * 10 | 0) + 1;
+            request.reply(500, null, ['Retry-After:'+ retryAfter]);
+            return false;
+          }
         }
+        this.last_update_tx = request.server_transaction;
         break;
     }
 
@@ -192,7 +195,20 @@ Dialog.prototype = {
       return;
     }
 
-    this.session.receiveRequest(request);
+    if(!this.session.receiveRequest(request)) {
+      return;
+    }
+
+    // The request was accepted, so now check for target refresh
+    switch(request.method) {
+      case JsSIP.C.INVITE:    // RFC3261 12.2.2
+      case JsSIP.C.UPDATE:    // RFC3311 5.2
+      case JsSIP.C.NOTIFY:    // RFC6655 3.2
+        if(request.hasHeader('contact')) {
+          this.remote_target = request.parseHeader('contact').uri;
+        }
+        break;
+    }
   }
 };
 
