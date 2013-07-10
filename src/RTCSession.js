@@ -12,6 +12,7 @@
 var RequestSender   = @@include('../src/RTCSession/RequestSender.js')
 var RTCMediaHandler = @@include('../src/RTCSession/RTCMediaHandler.js')
 var DTMF            = @@include('../src/RTCSession/DTMF.js')
+var Reinvite        = @@include('../src/RTCSession/Reinvite.js')
 
 var RTCSession,
   LOG_PREFIX = JsSIP.name +' | '+ 'RTC SESSION' +' | ',
@@ -35,11 +36,13 @@ RTCSession = function(ua) {
   'failed',
   'started',
   'ended',
-  'newDTMF'
+  'newDTMF',
+  'reinvite'
   ];
 
   this.ua = ua;
   this.status = C.STATUS_NULL;
+  this.lastReinvite = null;
   this.dialog = null;
   this.earlyDialogs = {};
   this.rtcMediaHandler = null;
@@ -202,7 +205,8 @@ RTCSession.prototype.answer = function(options) {
       var
         // run for reply success callback
         replySucceeded = function() {
-          var retransmissions = 1;
+          var retransmissions = 1,
+            timeout = JsSIP.Timers.T1;
           self.status = C.STATUS_WAITING_FOR_ACK;
 
           /**
@@ -211,22 +215,24 @@ RTCSession.prototype.answer = function(options) {
            *  since it is destroyed when receiving the first 2xx answer
            */
           self.timers.invite2xxTimer = window.setTimeout(function invite2xxRetransmission() {
-              var timeout = JsSIP.Timers.T1 * (Math.pow(2, retransmissions));
-
-              if((retransmissions * JsSIP.Timers.T1) <= JsSIP.Timers.T2) {
-                console.log(LOG_PREFIX +'Retransmitting 2xx:', retransmissions);
-                retransmissions += 1;
-
-                request.reply(200, null, ['Contact: '+ self.contact], body);
-
-                self.timers.invite2xxTimer = window.setTimeout(invite2xxRetransmission,
-                  timeout
-                );
-              } else {
-                window.clearTimeout(self.timers.invite2xxTimer);
+              if (self.status !== JsSIP.RTCSession.C.STATUS_WAITING_FOR_ACK) {
+                return;
               }
+
+              console.log(LOG_PREFIX +'Retransmitting 2xx:', retransmissions++);
+              request.reply(200, null, ['Contact: '+ self.contact], body);
+
+              if (timeout < JsSIP.Timers.T2) {
+                timeout = timeout * 2;
+                if (timeout > JsSIP.Timers.T2) {
+                  timeout = JsSIP.Timers.T2;
+                }
+              }
+              self.timers.invite2xxTimer = window.setTimeout(invite2xxRetransmission,
+                timeout
+              );
             },
-            JsSIP.Timers.T1
+            timeout
           );
 
           /**
@@ -374,6 +380,41 @@ RTCSession.prototype.sendDTMF = function(tones, options) {
 
 
 /**
+ * Send a reINVITE
+ *
+ * @param {Object} [options]
+ */
+RTCSession.prototype.sendReinvite = function(options) {
+  var sdp;
+
+  options = options || {};
+  sdp = options.sdp;
+
+  // TODO: could get offer from PeerConnection if JsSIP is handling media 
+
+  // Check whether the last INVITE transaction has completed
+  // See RFC 3261 section 14.1
+  if (this.lastReinvite) {
+    switch (this.lastReinvite.status) {
+    case C.STATUS_CONFIRMED:
+    case C.STATUS_CANCELED:
+    case C.STATUS_TERMINATED:
+      break;
+    default:
+      throw new JsSIP.Exceptions.InvalidStateError(this.lastReinvite.status);
+    }
+  }
+
+  // TODO: check whether there is an outstanding offer/answer exchange (including UPDATE)
+
+  var reinvite = new Reinvite(this);
+  reinvite.send(sdp, options);
+
+  this.lastReinvite = reinvite;
+};
+
+
+/**
  * RTCPeerconnection handlers
  */
 RTCSession.prototype.getLocalStreams = function() {
@@ -440,7 +481,7 @@ RTCSession.prototype.init_incoming = function(request) {
 
     // Set userNoAnswerTimer
     self.timers.userNoAnswerTimer = window.setTimeout(function() {
-        request.reply(408);
+        request.reply(480);
         self.failed('local',null, JsSIP.C.causes.NO_ANSWER);
       }, self.ua.configuration.no_answer_timeout
     );
@@ -746,6 +787,9 @@ RTCSession.prototype.receiveRequest = function(request) {
         window.clearTimeout(this.timers.ackTimer);
         window.clearTimeout(this.timers.invite2xxTimer);
         this.status = C.STATUS_CONFIRMED;
+      } else if(this.lastReinvite &&
+          this.lastReinvite.status === C.STATUS_WAITING_FOR_ACK) {
+        this.lastReinvite.receiveAck();
       }
       break;
     case JsSIP.C.BYE:
@@ -755,10 +799,25 @@ RTCSession.prototype.receiveRequest = function(request) {
       }
       break;
     case JsSIP.C.INVITE:
-      if(this.status === C.STATUS_CONFIRMED) {
-        console.log(LOG_PREFIX +'re-INVITE received');
-        // TODO: handle this and respond
+      if(this.status !== C.STATUS_CONFIRMED) {
+        request.reply(491);
+        return false;
       }
+      if (this.lastReinvite) {
+        switch (this.lastReinvite.status) {
+        case C.STATUS_CONFIRMED:
+        case C.STATUS_CANCELED:
+        case C.STATUS_TERMINATED:
+          // Previous reinvite has completed
+          break;
+        default:
+          request.reply(491);
+          return false;
+        }
+      }
+      var reinvite = new Reinvite(this);
+      reinvite.init_incoming(request);
+      this.lastReinvite = reinvite;
       break;
     case JsSIP.C.INFO:
       if(this.status === C.STATUS_CONFIRMED || this.status === C.STATUS_WAITING_FOR_ACK) {
