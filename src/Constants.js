@@ -45,7 +45,8 @@ JsSIP.C= {
     NO_ACK:                   'No ACK',
     USER_DENIED_MEDIA_ACCESS: 'User Denied Media Access',
     BAD_MEDIA_DESCRIPTION:    'Bad Media Description',
-    RTP_TIMEOUT:              'RTP Timeout'
+    RTP_TIMEOUT:              'RTP Timeout',
+    SESSION_TIMER:            'Session Timer Expired'
   },
 
   SIP_ERROR_CAUSES: {

@@ -362,6 +362,15 @@ Reason_Phrase   = (reserved / unreserved / escaped
 // HEADERS
 //=======================
 
+// Allow
+
+Allow        = allow_method (COMMA allow_method)*
+
+allow_method = method:Method {
+                 if (!data.methods) data.methods = [];
+                 data.methods.push(method); }
+
+
 // Allow-Events
 
 Allow_Events = event_type (COMMA event_type)*
@@ -557,6 +566,15 @@ Max_Forwards  = forwards: DIGIT+ {
 
 Min_Expires  = min_expires: delta_seconds {data = min_expires; }
 
+// MIN-SE (RFC 4028)
+
+Min_Se            = min_se: delta_seconds (SEMI generic_param)* {
+                      if (min_se >= 90) {
+                      	data = min_se;
+                      } else {
+                      	data = -1;
+                      }}
+
 // Name_Addr
 
 Name_Addr_Header =  ( display_name )* LAQUOT SIP_URI RAQUOT ( SEMI generic_param )* {
@@ -615,7 +633,9 @@ qop_value           = qop_value: ( "auth-int"i / "auth"i / token ) {
 
 Proxy_Require  = option_tag (COMMA option_tag)*
 
-option_tag     = token
+option_tag     = option: token {
+                   if (!data.options) data.options = [];
+                   data.options.push(option); }
 
 
 // RECORD-ROUTE
@@ -655,7 +675,8 @@ rr_param      = generic_param
 
 // REQUIRE
 
-Require       = option_tag (COMMA option_tag)*
+Require       = option_tag (COMMA option_tag)* {
+                  data = data.options; }
 
 
 // ROUTE
@@ -664,6 +685,17 @@ Route        = route_param (COMMA route_param)*
 
 route_param  = name_addr ( SEMI rr_param )*
 
+
+// SESSION-EXPIRES (RFC 4028)
+
+Session_Expires   = interval: delta_seconds (SEMI se_param)* {
+                      data.interval = interval; }
+
+se_param          = refresher_param / generic_param
+
+refresher_param   = "refresher"i EQUAL refresher: ("uas"i / "uac"i) {
+                      if(!data.params) data.params = {};
+                      data.params['refresher'] = refresher; }
 
 // SUBSCRIPTION-STATE
 
@@ -702,7 +734,8 @@ Subject  = ( TEXT_UTF8_TRIM )?
 
 // SUPPORTED
 
-Supported  = ( option_tag (COMMA option_tag)* )?
+Supported  = ( option_tag (COMMA option_tag)* )? {
+               data = data.options || []; }
 
 
 // TO

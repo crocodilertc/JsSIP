@@ -151,6 +151,8 @@ JsSIP.Grammar = (function(){
         "Status_Code": parse_Status_Code,
         "extension_code": parse_extension_code,
         "Reason_Phrase": parse_Reason_Phrase,
+        "Allow": parse_Allow,
+        "allow_method": parse_allow_method,
         "Allow_Events": parse_Allow_Events,
         "Call_ID": parse_Call_ID,
         "Contact": parse_Contact,
@@ -190,6 +192,7 @@ JsSIP.Grammar = (function(){
         "tag_param": parse_tag_param,
         "Max_Forwards": parse_Max_Forwards,
         "Min_Expires": parse_Min_Expires,
+        "Min_Se": parse_Min_Se,
         "Name_Addr_Header": parse_Name_Addr_Header,
         "Proxy_Authenticate": parse_Proxy_Authenticate,
         "challenge": parse_challenge,
@@ -208,11 +211,15 @@ JsSIP.Grammar = (function(){
         "qop_options": parse_qop_options,
         "qop_value": parse_qop_value,
         "Proxy_Require": parse_Proxy_Require,
+        "option_tag": parse_option_tag,
         "Record_Route": parse_Record_Route,
         "rec_route": parse_rec_route,
         "Require": parse_Require,
         "Route": parse_Route,
         "route_param": parse_route_param,
+        "Session_Expires": parse_Session_Expires,
+        "se_param": parse_se_param,
+        "refresher_param": parse_refresher_param,
         "Subscription_State": parse_Subscription_State,
         "substate_value": parse_substate_value,
         "subexp_params": parse_subexp_params,
@@ -7822,6 +7829,75 @@ JsSIP.Grammar = (function(){
         return result0;
       }
       
+      function parse_Allow() {
+        var result0, result1, result2, result3;
+        var pos0, pos1;
+        
+        pos0 = pos;
+        result0 = parse_allow_method();
+        if (result0 !== null) {
+          result1 = [];
+          pos1 = pos;
+          result2 = parse_COMMA();
+          if (result2 !== null) {
+            result3 = parse_allow_method();
+            if (result3 !== null) {
+              result2 = [result2, result3];
+            } else {
+              result2 = null;
+              pos = pos1;
+            }
+          } else {
+            result2 = null;
+            pos = pos1;
+          }
+          while (result2 !== null) {
+            result1.push(result2);
+            pos1 = pos;
+            result2 = parse_COMMA();
+            if (result2 !== null) {
+              result3 = parse_allow_method();
+              if (result3 !== null) {
+                result2 = [result2, result3];
+              } else {
+                result2 = null;
+                pos = pos1;
+              }
+            } else {
+              result2 = null;
+              pos = pos1;
+            }
+          }
+          if (result1 !== null) {
+            result0 = [result0, result1];
+          } else {
+            result0 = null;
+            pos = pos0;
+          }
+        } else {
+          result0 = null;
+          pos = pos0;
+        }
+        return result0;
+      }
+      
+      function parse_allow_method() {
+        var result0;
+        var pos0;
+        
+        pos0 = pos;
+        result0 = parse_Method();
+        if (result0 !== null) {
+          result0 = (function(offset, method) {
+                         if (!data.methods) data.methods = [];
+                         data.methods.push(method); })(pos0, result0);
+        }
+        if (result0 === null) {
+          pos = pos0;
+        }
+        return result0;
+      }
+      
       function parse_Allow_Events() {
         var result0, result1, result2, result3;
         var pos0, pos1;
@@ -9309,6 +9385,70 @@ JsSIP.Grammar = (function(){
         return result0;
       }
       
+      function parse_Min_Se() {
+        var result0, result1, result2, result3;
+        var pos0, pos1, pos2;
+        
+        pos0 = pos;
+        pos1 = pos;
+        result0 = parse_delta_seconds();
+        if (result0 !== null) {
+          result1 = [];
+          pos2 = pos;
+          result2 = parse_SEMI();
+          if (result2 !== null) {
+            result3 = parse_generic_param();
+            if (result3 !== null) {
+              result2 = [result2, result3];
+            } else {
+              result2 = null;
+              pos = pos2;
+            }
+          } else {
+            result2 = null;
+            pos = pos2;
+          }
+          while (result2 !== null) {
+            result1.push(result2);
+            pos2 = pos;
+            result2 = parse_SEMI();
+            if (result2 !== null) {
+              result3 = parse_generic_param();
+              if (result3 !== null) {
+                result2 = [result2, result3];
+              } else {
+                result2 = null;
+                pos = pos2;
+              }
+            } else {
+              result2 = null;
+              pos = pos2;
+            }
+          }
+          if (result1 !== null) {
+            result0 = [result0, result1];
+          } else {
+            result0 = null;
+            pos = pos1;
+          }
+        } else {
+          result0 = null;
+          pos = pos1;
+        }
+        if (result0 !== null) {
+          result0 = (function(offset, min_se) {
+                              if (min_se >= 90) {
+                              	data = min_se;
+                              } else {
+                              	data = -1;
+                              }})(pos0, result0[0]);
+        }
+        if (result0 === null) {
+          pos = pos0;
+        }
+        return result0;
+      }
+      
       function parse_Name_Addr_Header() {
         var result0, result1, result2, result3, result4, result5, result6;
         var pos0, pos1, pos2;
@@ -10138,13 +10278,13 @@ JsSIP.Grammar = (function(){
         var pos0, pos1;
         
         pos0 = pos;
-        result0 = parse_token();
+        result0 = parse_option_tag();
         if (result0 !== null) {
           result1 = [];
           pos1 = pos;
           result2 = parse_COMMA();
           if (result2 !== null) {
-            result3 = parse_token();
+            result3 = parse_option_tag();
             if (result3 !== null) {
               result2 = [result2, result3];
             } else {
@@ -10160,7 +10300,7 @@ JsSIP.Grammar = (function(){
             pos1 = pos;
             result2 = parse_COMMA();
             if (result2 !== null) {
-              result3 = parse_token();
+              result3 = parse_option_tag();
               if (result3 !== null) {
                 result2 = [result2, result3];
               } else {
@@ -10180,6 +10320,23 @@ JsSIP.Grammar = (function(){
           }
         } else {
           result0 = null;
+          pos = pos0;
+        }
+        return result0;
+      }
+      
+      function parse_option_tag() {
+        var result0;
+        var pos0;
+        
+        pos0 = pos;
+        result0 = parse_token();
+        if (result0 !== null) {
+          result0 = (function(offset, option) {
+                           if (!data.options) data.options = [];
+                           data.options.push(option); })(pos0, result0);
+        }
+        if (result0 === null) {
           pos = pos0;
         }
         return result0;
@@ -10331,51 +10488,59 @@ JsSIP.Grammar = (function(){
       
       function parse_Require() {
         var result0, result1, result2, result3;
-        var pos0, pos1;
+        var pos0, pos1, pos2;
         
         pos0 = pos;
-        result0 = parse_token();
+        pos1 = pos;
+        result0 = parse_option_tag();
         if (result0 !== null) {
           result1 = [];
-          pos1 = pos;
+          pos2 = pos;
           result2 = parse_COMMA();
           if (result2 !== null) {
-            result3 = parse_token();
+            result3 = parse_option_tag();
             if (result3 !== null) {
               result2 = [result2, result3];
             } else {
               result2 = null;
-              pos = pos1;
+              pos = pos2;
             }
           } else {
             result2 = null;
-            pos = pos1;
+            pos = pos2;
           }
           while (result2 !== null) {
             result1.push(result2);
-            pos1 = pos;
+            pos2 = pos;
             result2 = parse_COMMA();
             if (result2 !== null) {
-              result3 = parse_token();
+              result3 = parse_option_tag();
               if (result3 !== null) {
                 result2 = [result2, result3];
               } else {
                 result2 = null;
-                pos = pos1;
+                pos = pos2;
               }
             } else {
               result2 = null;
-              pos = pos1;
+              pos = pos2;
             }
           }
           if (result1 !== null) {
             result0 = [result0, result1];
           } else {
             result0 = null;
-            pos = pos0;
+            pos = pos1;
           }
         } else {
           result0 = null;
+          pos = pos1;
+        }
+        if (result0 !== null) {
+          result0 = (function(offset) {
+                          data = data.options; })(pos0);
+        }
+        if (result0 === null) {
           pos = pos0;
         }
         return result0;
@@ -10480,6 +10645,139 @@ JsSIP.Grammar = (function(){
           }
         } else {
           result0 = null;
+          pos = pos0;
+        }
+        return result0;
+      }
+      
+      function parse_Session_Expires() {
+        var result0, result1, result2, result3;
+        var pos0, pos1, pos2;
+        
+        pos0 = pos;
+        pos1 = pos;
+        result0 = parse_delta_seconds();
+        if (result0 !== null) {
+          result1 = [];
+          pos2 = pos;
+          result2 = parse_SEMI();
+          if (result2 !== null) {
+            result3 = parse_se_param();
+            if (result3 !== null) {
+              result2 = [result2, result3];
+            } else {
+              result2 = null;
+              pos = pos2;
+            }
+          } else {
+            result2 = null;
+            pos = pos2;
+          }
+          while (result2 !== null) {
+            result1.push(result2);
+            pos2 = pos;
+            result2 = parse_SEMI();
+            if (result2 !== null) {
+              result3 = parse_se_param();
+              if (result3 !== null) {
+                result2 = [result2, result3];
+              } else {
+                result2 = null;
+                pos = pos2;
+              }
+            } else {
+              result2 = null;
+              pos = pos2;
+            }
+          }
+          if (result1 !== null) {
+            result0 = [result0, result1];
+          } else {
+            result0 = null;
+            pos = pos1;
+          }
+        } else {
+          result0 = null;
+          pos = pos1;
+        }
+        if (result0 !== null) {
+          result0 = (function(offset, interval) {
+                              data.interval = interval; })(pos0, result0[0]);
+        }
+        if (result0 === null) {
+          pos = pos0;
+        }
+        return result0;
+      }
+      
+      function parse_se_param() {
+        var result0;
+        
+        result0 = parse_refresher_param();
+        if (result0 === null) {
+          result0 = parse_generic_param();
+        }
+        return result0;
+      }
+      
+      function parse_refresher_param() {
+        var result0, result1, result2;
+        var pos0, pos1;
+        
+        pos0 = pos;
+        pos1 = pos;
+        if (input.substr(pos, 9).toLowerCase() === "refresher") {
+          result0 = input.substr(pos, 9);
+          pos += 9;
+        } else {
+          result0 = null;
+          if (reportFailures === 0) {
+            matchFailed("\"refresher\"");
+          }
+        }
+        if (result0 !== null) {
+          result1 = parse_EQUAL();
+          if (result1 !== null) {
+            if (input.substr(pos, 3).toLowerCase() === "uas") {
+              result2 = input.substr(pos, 3);
+              pos += 3;
+            } else {
+              result2 = null;
+              if (reportFailures === 0) {
+                matchFailed("\"uas\"");
+              }
+            }
+            if (result2 === null) {
+              if (input.substr(pos, 3).toLowerCase() === "uac") {
+                result2 = input.substr(pos, 3);
+                pos += 3;
+              } else {
+                result2 = null;
+                if (reportFailures === 0) {
+                  matchFailed("\"uac\"");
+                }
+              }
+            }
+            if (result2 !== null) {
+              result0 = [result0, result1, result2];
+            } else {
+              result0 = null;
+              pos = pos1;
+            }
+          } else {
+            result0 = null;
+            pos = pos1;
+          }
+        } else {
+          result0 = null;
+          pos = pos1;
+        }
+        if (result0 !== null) {
+          result0 = (function(offset, refresher) {
+                              if(!data.params) data.params = {};
+                              data.params['refresher'] = refresher; })(pos0, result0[2]);
+        }
+        if (result0 === null) {
           pos = pos0;
         }
         return result0;
@@ -10802,54 +11100,62 @@ JsSIP.Grammar = (function(){
       
       function parse_Supported() {
         var result0, result1, result2, result3;
-        var pos0, pos1;
+        var pos0, pos1, pos2;
         
         pos0 = pos;
-        result0 = parse_token();
+        pos1 = pos;
+        result0 = parse_option_tag();
         if (result0 !== null) {
           result1 = [];
-          pos1 = pos;
+          pos2 = pos;
           result2 = parse_COMMA();
           if (result2 !== null) {
-            result3 = parse_token();
+            result3 = parse_option_tag();
             if (result3 !== null) {
               result2 = [result2, result3];
             } else {
               result2 = null;
-              pos = pos1;
+              pos = pos2;
             }
           } else {
             result2 = null;
-            pos = pos1;
+            pos = pos2;
           }
           while (result2 !== null) {
             result1.push(result2);
-            pos1 = pos;
+            pos2 = pos;
             result2 = parse_COMMA();
             if (result2 !== null) {
-              result3 = parse_token();
+              result3 = parse_option_tag();
               if (result3 !== null) {
                 result2 = [result2, result3];
               } else {
                 result2 = null;
-                pos = pos1;
+                pos = pos2;
               }
             } else {
               result2 = null;
-              pos = pos1;
+              pos = pos2;
             }
           }
           if (result1 !== null) {
             result0 = [result0, result1];
           } else {
             result0 = null;
-            pos = pos0;
+            pos = pos1;
           }
         } else {
           result0 = null;
-          pos = pos0;
+          pos = pos1;
         }
         result0 = result0 !== null ? result0 : "";
+        if (result0 !== null) {
+          result0 = (function(offset) {
+                       data = data.options || []; })(pos0);
+        }
+        if (result0 === null) {
+          pos = pos0;
+        }
         return result0;
       }
       

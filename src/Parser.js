@@ -151,6 +151,28 @@ function parseHeader(message, data, headerStart, headerEnd) {
       message.setHeader('proxy-authenticate', headerValue);
       parsed = message.parseHeader('proxy-authenticate');
       break;
+    case 'session-expires':
+    case 'x':
+      message.setHeader('session-expires', headerValue);
+      parsed = message.parseHeader('session-expires');
+      break;
+    case 'min-se':
+      message.setHeader('min-se', headerValue);
+      parsed = message.parseHeader('min-se');
+      break;
+    case 'supported':
+    case 'k':
+      message.setHeader('supported', headerValue);
+      parsed = message.parseHeader('supported');
+      break;
+    case 'require':
+      message.setHeader('require', headerValue);
+      parsed = message.parseHeader('require');
+      break;
+    case 'allow':
+      message.setHeader('allow', headerValue);
+      parsed = message.parseHeader('allow');
+      break;
     default:
       // Do not parse this header.
       message.setHeader(headerName, headerValue);

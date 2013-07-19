@@ -109,6 +109,9 @@
       if (this.session.status === JsSIP.RTCSession.C.STATUS_CONFIRMED) {
         this.session.sendACK();
         console.log(LOG_PREFIX +'re-INVITE ACK sent', Date.now());
+
+        this.session.dialog.processSessionTimerHeaders(response);
+
         this.emit('succeeded', this, {
           originator: 'remote',
           response: response,
@@ -337,6 +340,7 @@
     options = options || {};
   
     var self = this,
+      request = this.request,
       extraHeaders = options.extraHeaders || [],
       sdp = options.sdp;
   
@@ -353,6 +357,9 @@
       delete this.timers.answer;
     }
   
+    this.session.dialog.processSessionTimerHeaders(request);
+    this.session.dialog.addSessionTimerResponseHeaders(extraHeaders);
+
     extraHeaders.push('Contact: ' + self.session.contact);
     extraHeaders.push('Allow: '+ JsSIP.Utils.getAllowedMethods(self.session.ua, true));
     extraHeaders.push('Content-Type: application/sdp');
@@ -362,9 +369,9 @@
       self.onTransportError();
     };
 
-    this.request.reply(200, null, extraHeaders,
+    request.reply(200, null, extraHeaders,
       sdp,
-      this.successResponseSent.bind(this, this.request, extraHeaders, sdp),
+      this.successResponseSent.bind(this, request, extraHeaders, sdp),
       replyFailed
     );
     this.status = JsSIP.RTCSession.C.STATUS_WAITING_FOR_ACK;

@@ -16,7 +16,9 @@ var Dialog,
   C = {
     // Dialog states
     STATUS_EARLY:       1,
-    STATUS_CONFIRMED:   2
+    STATUS_CONFIRMED:   2,
+
+    DEFAULT_MIN_SE: 90
   };
 
 // RFC 3261 12.1
@@ -72,6 +74,14 @@ Dialog = function(session, message, type, state) {
     this.route_set = message.getHeaderAll('record-route').reverse();
   }
 
+  // Session timer state (RFC 4028)
+  this.session_timer = {
+      localRefresher: true,
+      interval: null,
+      min_interval: C.DEFAULT_MIN_SE,
+      timer_id: null
+  };
+
   this.session = session;
   session.ua.dialogs[this.id.toString()] = this;
   console.log(LOG_PREFIX +'new ' + type + ' dialog created with status ' + (this.state === C.STATUS_EARLY ? 'EARLY': 'CONFIRMED'));
@@ -95,6 +105,7 @@ Dialog.prototype = {
 
   terminate: function() {
     console.log(LOG_PREFIX +'dialog ' + this.id.toString() + ' deleted');
+    this.clearSessionRefreshTimer();
     delete this.session.ua.dialogs[this.id.toString()];
   },
 
@@ -113,6 +124,22 @@ Dialog.prototype = {
 
     cseq = (method === JsSIP.C.CANCEL || method === JsSIP.C.ACK) ? this.local_seqnum : this.local_seqnum += 1;
 
+    // Add Session Timer headers (RFC 4028)
+    if (method === JsSIP.C.INVITE || method === JsSIP.C.UPDATE) {
+      var min_se = this.session_timer.min_interval;
+      var interval = this.session_timer.interval;
+
+      if (min_se > C.DEFAULT_MIN_SE) {
+        extraHeaders.push('Min-SE: ' + min_se);
+      }
+
+      if (interval !== null) {
+        var expires = min_se > interval ? min_se : interval;
+        var refresher = this.session_timer.localRefresher ? 'uac' : 'uas';
+        extraHeaders.push('Session-Expires: ' + expires + ';refresher=' + refresher);
+      }
+    }
+
     request = new JsSIP.OutgoingRequest(
       method,
       this.remote_target,
@@ -123,7 +150,8 @@ Dialog.prototype = {
         'from_tag': this.id.local_tag,
         'to_uri': this.remote_uri,
         'to_tag': this.id.remote_tag,
-        'route_set': this.route_set
+        'route_set': this.route_set,
+        'extra_extensions': JsSIP.Utils.getSessionExtensions(this.session, method)
       }, extraHeaders);
 
     request.dialog = this;
@@ -214,6 +242,113 @@ Dialog.prototype = {
           this.remote_target = request.parseHeader('contact').uri;
         }
         break;
+    }
+  },
+
+  updateMinSessionExpires: function (interval) {
+    if (interval > this.session_timer.min_interval) {
+      this.session_timer.min_interval = interval;
+    }
+  },
+
+  /**
+   * Configures the appropriate session timer timeout and behaviour, based
+   * on the provided session expires interval and whether the local endpoint
+   * is responsible for refreshes.
+   * @param {Number} interval The session expires interval (in seconds).
+   * @param {Boolean} localRefresher
+   */
+  setSessionRefreshTimer: function () {
+    var localRefresher = this.session_timer.localRefresher;
+    var interval = this.session_timer.interval;
+    var timeout;
+    var action;
+    var self = this;
+
+    if (localRefresher) {
+      timeout = interval / 2;
+      action = function () {
+        self.session_timer.timer_id = null;
+        self.session.emit('refresh', self.session, {});
+      };
+    } else {
+      timeout = interval - Math.max(interval / 3, 32);
+      action = function () {
+        self.session_timer.timer_id = null;
+        self.session.sendBye({
+          status_code: 408,
+          reason_phrase: JsSIP.C.causes.SESSION_TIMER
+        });
+        self.session.ended('system', null, JsSIP.C.causes.SESSION_TIMER);
+      };
+    }
+
+    this.session_timer.timer_id = window.setTimeout(action, timeout * 1000);
+  },
+
+  clearSessionRefreshTimer: function () {
+    if (this.session_timer.timer_id !== null) {
+      window.clearTimeout(this.session_timer.timer_id);
+      this.session_timer.timer_id = null;
+    }
+  },
+
+  disableSessionRefresh: function () {
+    this.session_timer.interval = null;
+    this.clearSessionRefreshTimer();
+  },
+
+  /**
+   * Should only be called when we receive, or are about to send, a 2xx response
+   * to a method that acts as a session refresher (currently INVITE and UPDATE).
+   * @param message The received message (may be request or response)
+   */
+  processSessionTimerHeaders: function (message) {
+    if (message.hasHeader('min-se')) {
+      this.updateMinSessionExpires(message.parseHeader('min-se'));
+    }
+
+    if (!message.hasHeader('session-expires')) {
+      this.disableSessionRefresh();
+      return;
+    }
+
+    this.clearSessionRefreshTimer();
+
+    var se = message.parseHeader('session-expires');
+    var localRefresher = true;
+
+    if (message instanceof JsSIP.IncomingRequest) {
+      // Session timer requested
+      // Refresher parameter is optional at this stage
+      if (se.params && se.params.refresher) {
+        localRefresher = se.params.refresher === 'uas';
+      }
+    } else if (message instanceof JsSIP.IncomingResponse) {
+      // Session timer enabled
+      // Refresher parameter is required at this stage
+      localRefresher = se.params.refresher === 'uac';
+    } else {
+      throw new TypeError('Unexpected message type');
+    }
+
+    this.session_timer.interval = se.interval;
+    this.session_timer.localRefresher = localRefresher;
+
+    this.setSessionRefreshTimer();
+  },
+
+  /**
+   * Adds the Session-Expires header to the provided extra headers array.
+   * Should only be used for a 2xx response to a method that acts as a session
+   * refresher (currently INVITE and UPDATE).
+   * @param extraHeaders
+   */
+  addSessionTimerResponseHeaders: function (extraHeaders) {
+    var interval = this.session_timer.interval;
+    if (interval) {
+      var refresher = this.session_timer.localRefresher ? 'uas' : 'uac';
+      extraHeaders.push('Session-Expires: ' + interval + ';refresher=' + refresher);
     }
   }
 };

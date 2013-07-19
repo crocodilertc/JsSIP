@@ -44,6 +44,21 @@ var UA,
 
     SUPPORTED: 'path, outbound, gruu',
 
+    /* Session events and corresponding SIP extensions.
+     * Dynamically added to 'Supported' header field if the
+     * corresponding event handler is set.
+     */
+    SESSION_EVENT_EXTENSIONS: {
+      'refresh': 'timer'
+    },
+
+    /*
+     * Limits the methods on which a given extension is listed as supported.
+     */
+    EXTENSION_METHODS: {
+      'timer': ['INVITE', 'UPDATE']
+    },
+
     MAX_FORWARDS: 69,
     TAG_LENGTH: 10
   };

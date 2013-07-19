@@ -27,7 +27,8 @@ OutgoingRequest = function(method, ruri, ua, params, extraHeaders, body) {
     to,
     from,
     call_id,
-    cseq;
+    cseq,
+    extra_extensions;
 
   params = params || {};
 
@@ -87,6 +88,10 @@ OutgoingRequest = function(method, ruri, ua, params, extraHeaders, body) {
   cseq = params.cseq || Math.floor(Math.random() * 10000);
   this.cseq = cseq;
   this.setHeader('cseq', cseq + ' ' + method);
+
+  // Supported
+  extra_extensions = params.extra_extensions || '';
+  this.setHeader('supported', JsSIP.UA.C.SUPPORTED + extra_extensions);
 };
 
 OutgoingRequest.prototype = {
@@ -114,7 +119,6 @@ OutgoingRequest.prototype = {
       msg += this.extraHeaders[idx] +'\r\n';
     }
 
-    msg += 'Supported: ' +  JsSIP.UA.C.SUPPORTED +'\r\n';
     msg += 'User-Agent: ' + JsSIP.C.USER_AGENT +'\r\n';
 
     if(this.body) {

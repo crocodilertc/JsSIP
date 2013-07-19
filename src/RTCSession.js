@@ -13,6 +13,7 @@ var RequestSender   = @@include('../src/RTCSession/RequestSender.js')
 var RTCMediaHandler = @@include('../src/RTCSession/RTCMediaHandler.js')
 var DTMF            = @@include('../src/RTCSession/DTMF.js')
 var Reinvite        = @@include('../src/RTCSession/Reinvite.js')
+var Update          = @@include('../src/RTCSession/Update.js')
 
 var RTCSession,
   LOG_PREFIX = JsSIP.name +' | '+ 'RTC SESSION' +' | ',
@@ -37,7 +38,9 @@ RTCSession = function(ua) {
   'started',
   'ended',
   'newDTMF',
-  'reinvite'
+  'reinvite',
+  'refresh',
+  'update'
   ];
 
   this.ua = ua;
@@ -61,6 +64,7 @@ RTCSession = function(ua) {
   this.remote_identity = null;
   this.start_time = null;
   this.end_time = null;
+  this.allowed = null;
 
   // Custom session empty object for high level use
   this.data = {};
@@ -294,6 +298,9 @@ RTCSession.prototype.answer = function(options) {
 
   window.clearTimeout(this.timers.userNoAnswerTimer);
 
+  this.dialog.processSessionTimerHeaders(request);
+  this.dialog.addSessionTimerResponseHeaders(extraHeaders);
+
   if (sdp) {
     // Use the application-provided SDP
     answerCreationSucceeded(sdp);
@@ -415,6 +422,45 @@ RTCSession.prototype.sendReinvite = function(options) {
 
 
 /**
+ * Send an UPDATE
+ *
+ * @param {Object} [options]
+ */
+RTCSession.prototype.sendUpdate = function(options) {
+  var sdp;
+
+  options = options || {};
+  sdp = options.sdp;
+
+  if (sdp) {
+    // TODO: check whether there is an outstanding offer/answer exchange
+  }
+
+  var update = new Update(this);
+  update.send(options);
+};
+
+/**
+ * Checks whether the provided method is present in the Allow header received
+ * from the remote party.  If an Allow header has not been received, the
+ * provided default is returned instead.
+ * @param {String} method The SIP method to check.
+ * @param {Boolean} defaultValue The value to return if no Allow header has
+ * been received.
+ * @returns {Boolean}
+ */
+RTCSession.prototype.isMethodAllowed = function(method, defaultValue) {
+  if (!this.allowed) {
+    return defaultValue;
+  }
+  if (this.allowed.indexOf(method) >= 0) {
+    return true;
+  }
+  return false;
+};
+
+
+/**
  * RTCPeerconnection handlers
  */
 RTCSession.prototype.getLocalStreams = function() {
@@ -457,6 +503,11 @@ RTCSession.prototype.init_incoming = function(request) {
 
   //Save the session into the ua sessions collection.
   this.ua.sessions[this.id] = this;
+
+  // Store the allowed methods if provided
+  if(request.hasHeader('allow')) {
+    this.allowed = request.parseHeader('allow').methods;
+  }
 
   //Get the Expires header value if exists
   if(request.hasHeader('expires')) {
@@ -548,7 +599,7 @@ RTCSession.prototype.init_incoming = function(request) {
 RTCSession.prototype.connect = function(target, options) {
   options = options || {};
 
-  var event, requestParams,
+  var event, requestParams, request,
     invalidTarget = false,
     eventHandlers = options.eventHandlers || {},
     extraHeaders = options.extraHeaders || [],
@@ -592,7 +643,10 @@ RTCSession.prototype.connect = function(target, options) {
   this.isCanceled = false;
   this.received_100 = false;
 
-  requestParams = {from_tag: this.from_tag};
+  requestParams = {
+      from_tag: this.from_tag,
+      extra_extensions: JsSIP.Utils.getSessionExtensions(this)
+  };
 
   this.contact = this.ua.contact.toString({
     anonymous: this.anonymous,
@@ -607,11 +661,11 @@ RTCSession.prototype.connect = function(target, options) {
     extraHeaders.push('Privacy: id');
   }
 
-  extraHeaders.push('Contact: '+ this.contact);
-  extraHeaders.push('Allow: '+ JsSIP.Utils.getAllowedMethods(this.ua, true));
-  extraHeaders.push('Content-Type: application/sdp');
-
-  this.request = new JsSIP.OutgoingRequest(JsSIP.C.INVITE, target, this.ua, requestParams, extraHeaders);
+  request = new JsSIP.OutgoingRequest(JsSIP.C.INVITE, target, this.ua, requestParams, extraHeaders);
+  this.request = request;
+  request.setHeader('contact', this.contact);
+  request.setHeader('allow', JsSIP.Utils.getAllowedMethods(this.ua, true));
+  request.setHeader('content-type', 'application/sdp');
 
   this.id = this.request.call_id + this.from_tag;
 
@@ -828,14 +882,8 @@ RTCSession.prototype.receiveRequest = function(request) {
       }
       break;
     case JsSIP.C.UPDATE:
-      // For now, just support empty UPDATEs (for session timer refreshes)
-      contentType = request.getHeader('content-type');
-      if(contentType || request.body) {
-        request.reply(488);
-        return false;
-      }
-      request.reply(200);
-      break;
+      var update = new Update(this);
+      return update.init_incoming(request);
   }
 
   return true;
@@ -1007,6 +1055,13 @@ RTCSession.prototype.receiveInviteResponse = function(response) {
       }
 
       this.sendACK();
+
+      // Store the allowed methods if provided
+      if(response.hasHeader('allow')) {
+        this.allowed = response.parseHeader('allow').methods;
+      }
+
+      this.dialog.processSessionTimerHeaders(response);
 
       if (this.rtcMediaHandler) {
         // We're handling the SDP, media, peer connection, etc

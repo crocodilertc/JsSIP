@@ -146,7 +146,8 @@ Utils= {
     var exceptions = {
       'Call-Id': 'Call-ID',
       'Cseq': 'CSeq',
-      'Www-Authenticate': 'WWW-Authenticate'
+      'Www-Authenticate': 'WWW-Authenticate',
+      'Min-Se': 'Min-SE'
       },
       name = string.toLowerCase().replace(/_/g,'-').split('-'),
       hname = '', part;
@@ -201,6 +202,23 @@ Utils= {
     }
 
     return allowed;
+  },
+
+  getSessionExtensions: function(session, method) {
+    var event, option,
+      supported = '';
+
+    for (event in JsSIP.UA.C.SESSION_EVENT_EXTENSIONS) {
+      if (session.checkEvent(event) && session.listeners(event).length > 0) {
+        // Check whether this extension should be added to this method
+        option = JsSIP.UA.C.SESSION_EVENT_EXTENSIONS[event];
+        if (JsSIP.UA.C.EXTENSION_METHODS[option].indexOf(method) >= 0) {
+          supported += ', ' + option;
+        }
+      }
+    }
+
+    return supported;
   },
 
   // MD5 (Message-Digest Algorithm) http://www.webtoolkit.info
