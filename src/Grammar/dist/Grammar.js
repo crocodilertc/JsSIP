@@ -192,7 +192,7 @@ JsSIP.Grammar = (function(){
         "tag_param": parse_tag_param,
         "Max_Forwards": parse_Max_Forwards,
         "Min_Expires": parse_Min_Expires,
-        "Min_Se": parse_Min_Se,
+        "Min_SE": parse_Min_SE,
         "Name_Addr_Header": parse_Name_Addr_Header,
         "Proxy_Authenticate": parse_Proxy_Authenticate,
         "challenge": parse_challenge,
@@ -9385,7 +9385,7 @@ JsSIP.Grammar = (function(){
         return result0;
       }
       
-      function parse_Min_Se() {
+      function parse_Min_SE() {
         var result0, result1, result2, result3;
         var pos0, pos1, pos2;
         

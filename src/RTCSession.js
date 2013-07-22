@@ -645,7 +645,7 @@ RTCSession.prototype.connect = function(target, options) {
 
   requestParams = {
       from_tag: this.from_tag,
-      extra_extensions: JsSIP.Utils.getSessionExtensions(this)
+      extra_extensions: JsSIP.Utils.getSessionExtensions(this, JsSIP.C.INVITE)
   };
 
   this.contact = this.ua.contact.toString({

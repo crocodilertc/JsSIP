@@ -568,7 +568,7 @@ Min_Expires  = min_expires: delta_seconds {data = min_expires; }
 
 // MIN-SE (RFC 4028)
 
-Min_Se            = min_se: delta_seconds (SEMI generic_param)* {
+Min_SE            = min_se: delta_seconds (SEMI generic_param)* {
                       if (min_se >= 90) {
                       	data = min_se;
                       } else {
