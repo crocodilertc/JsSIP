@@ -340,7 +340,7 @@ RTCSession.prototype.sendDTMF = function(tones, options) {
   }
 
   // Check tones
-  if (!tones || (typeof tones !== 'string' && typeof tones !== 'number') || !tones.toString().match(/^[0-9A-D#*]+$/i)) {
+  if (!tones || (typeof tones !== 'string' && typeof tones !== 'number') || !tones.toString().match(/^[0-9A-D#*,]+$/i)) {
     throw new TypeError('Invalid tones: '+ tones);
   }
 
