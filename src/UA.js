@@ -26,8 +26,9 @@ var UA,
      * corresponding event handler is set.
      */
     EVENT_METHODS: {
-      'newRTCSession': 'INVITE',
-      'newMessage': 'MESSAGE'
+      'newRTCSession': 'INVITE,UPDATE',
+      'newMessage': 'MESSAGE',
+      'newRefer': 'REFER'
     },
 
     ALLOWED_METHODS: [
@@ -42,21 +43,28 @@ var UA,
       'application/dtmf-relay'
     ],
 
-    SUPPORTED: 'path, outbound, gruu',
+    SUPPORTED_EXTENSIONS: [
+      'path',
+      'outbound',
+      'gruu'
+    ],
 
-    /* Session events and corresponding SIP extensions.
-     * Dynamically added to 'Supported' header field if the
-     * corresponding event handler is set.
+    /*
+     * Additional SIP extensions that are supported if the corresponding UA
+     * event is handled.
+     * Dynamically added to 'Supported' header field.
      */
-    SESSION_EVENT_EXTENSIONS: {
-      'refresh': 'timer'
+    EVENT_EXTENSIONS: {
+      'tdialog': 'newRefer'
     },
 
     /*
-     * Limits the methods on which a given extension is listed as supported.
+     * Additional SIP extensions that are supported if the corresponding Session
+     * event is handled.
+     * Dynamically added to 'Supported' header field.
      */
-    EXTENSION_METHODS: {
-      'timer': ['INVITE', 'UPDATE']
+    SESSION_EVENT_EXTENSIONS: {
+      'timer': 'refresh'
     },
 
     MAX_FORWARDS: 69,
@@ -72,7 +80,8 @@ UA = function(configuration) {
     'registrationFailed',
     'newRTCSession',
     'newMessage',
-    'newOptions'
+    'newOptions',
+    'newRefer'
   ];
 
   // Set Accepted Body Types
@@ -90,6 +99,7 @@ UA = function(configuration) {
   this.applicants = {};
 
   this.sessions = {};
+  this.refers = {};
   this.transport = null;
   this.contact = null;
   this.status = C.STATUS_INIT;
@@ -213,7 +223,7 @@ UA.prototype.sendMessage = function(target, body, options) {
  *
  */
 UA.prototype.stop = function() {
-  var session, applicant,
+  var session, refer, applicant,
     ua = this;
 
   console.log(LOG_PREFIX +'user requested closure...');
@@ -233,6 +243,11 @@ UA.prototype.stop = function() {
   for(session in this.sessions) {
     console.log(LOG_PREFIX +'closing session ' + session);
     this.sessions[session].terminate();
+  }
+
+  // Run  _close_ on every Refer
+  for(refer in this.refers) {
+    this.refers[refer].close();
   }
 
   // Run  _close_ on every applicant
@@ -457,6 +472,23 @@ UA.prototype.receiveRequest = function(request) {
     return;
   }
 
+  // Check Require header (RFC 3261 section 8.2.2.3)
+  if(request.hasHeader('require')) {
+    var supported = JsSIP.Utils.getSupportedExtensions(this);
+    var tokens = request.parseHeader('require');
+
+    for (var idx = 0, len = tokens.length; idx < len; idx++) {
+      var token = tokens[idx];
+      if (supported.indexOf(token) < 0 && !C.SESSION_EVENT_EXTENSIONS[token]) {
+        // Unrecognised option-tag/extension
+        if (request.method !== JsSIP.C.ACK) {
+          request.reply_sl(420);
+        }
+        return;
+      }
+    }
+  }
+
   // Create the server transaction
   if(method === JsSIP.C.INVITE) {
     new JsSIP.Transactions.InviteServerTransaction(request, this);
@@ -472,7 +504,8 @@ UA.prototype.receiveRequest = function(request) {
   if(method === JsSIP.C.OPTIONS) {
     var extraHeaders = [
       'Allow: '+ JsSIP.Utils.getAllowedMethods(this),
-      'Accept: '+ C.ACCEPTED_BODY_TYPES
+      'Accept: '+ C.ACCEPTED_BODY_TYPES,
+      'Supported: ' + JsSIP.Utils.getSupportedExtensions(this).join(',')
     ];
     
     if (!this.checkEvent('newOptions') || this.listeners('newOptions').length === 0) {
@@ -534,8 +567,12 @@ UA.prototype.receiveRequest = function(request) {
          * and without To tag.
          */
         break;
+      case JsSIP.C.REFER:
+        var refer = new JsSIP.Refer(this);
+        refer.init_incoming(request);
+        break;
       default:
-        request.reply(405);
+        request.reply(405, null, ['Allow: '+ JsSIP.Utils.getAllowedMethods(this)]);
         break;
     }
   } else {

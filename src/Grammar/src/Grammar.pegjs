@@ -364,7 +364,8 @@ Reason_Phrase   = (reserved / unreserved / escaped
 
 // Allow
 
-Allow        = allow_method (COMMA allow_method)*
+Allow        = allow_method (COMMA allow_method)* {
+				 data = data.methods; }
 
 allow_method = method:Method {
                  if (!data.methods) data.methods = [];
@@ -378,8 +379,12 @@ Allow_Events = event_type (COMMA event_type)*
 
 // CALL-ID
 
-Call_ID  =  word ( "@" word )? {
-              data = input.substring(pos, offset); }
+Call_ID  =  call_id:call_id {
+              data = call_id; }
+
+call_id  =  word ( "@" word )? {
+              return input.substring(pos, offset); }
+
 
 // CONTACT
 
@@ -673,6 +678,18 @@ rec_route     = name_addr ( SEMI rr_param )* {
 rr_param      = generic_param
 
 
+// REFER-TO
+
+Refer_To      = ( addr_spec / name_addr ) ( SEMI refer_param )* {
+                  try {
+                    data = new JsSIP.NameAddrHeader(data.uri, data.display_name, data.params);
+                  } catch(e) {
+                    data = -1;
+                  }}
+
+refer_param   = generic_param
+
+
 // REQUIRE
 
 Require       = option_tag (COMMA option_tag)* {
@@ -736,6 +753,20 @@ Subject  = ( TEXT_UTF8_TRIM )?
 
 Supported  = ( option_tag (COMMA option_tag)* )? {
                data = data.options || []; }
+
+
+// TARGET-DIALOG
+
+Target_Dialog  = call_id:call_id ( SEMI td_param )* {
+                   data.call_id = call_id; } 
+
+td_param       = remote_param / local_param / generic_param
+
+remote_param   = "remote-tag"i EQUAL tag:token {
+                   data.remote_tag = tag; }
+
+local_param    = "local-tag"i EQUAL tag:token {
+                   data.local_tag = tag; }
 
 
 // TO

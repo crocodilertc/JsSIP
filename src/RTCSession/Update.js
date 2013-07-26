@@ -52,7 +52,6 @@
     }
   
     extraHeaders.push('Contact: '+ this.session.contact);
-    extraHeaders.push('Allow: '+ JsSIP.Utils.getAllowedMethods(this.session.ua, true));
     if (sdp) {
       extraHeaders.push('Content-Type: application/sdp');
     }

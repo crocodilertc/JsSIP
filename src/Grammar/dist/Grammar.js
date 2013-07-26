@@ -155,6 +155,7 @@ JsSIP.Grammar = (function(){
         "allow_method": parse_allow_method,
         "Allow_Events": parse_Allow_Events,
         "Call_ID": parse_Call_ID,
+        "call_id": parse_call_id,
         "Contact": parse_Contact,
         "contact_param": parse_contact_param,
         "name_addr": parse_name_addr,
@@ -214,6 +215,7 @@ JsSIP.Grammar = (function(){
         "option_tag": parse_option_tag,
         "Record_Route": parse_Record_Route,
         "rec_route": parse_rec_route,
+        "Refer_To": parse_Refer_To,
         "Require": parse_Require,
         "Route": parse_Route,
         "route_param": parse_route_param,
@@ -226,6 +228,10 @@ JsSIP.Grammar = (function(){
         "event_reason_value": parse_event_reason_value,
         "Subject": parse_Subject,
         "Supported": parse_Supported,
+        "Target_Dialog": parse_Target_Dialog,
+        "td_param": parse_td_param,
+        "remote_param": parse_remote_param,
+        "local_param": parse_local_param,
         "To": parse_To,
         "to_param": parse_to_param,
         "Via": parse_Via,
@@ -7831,13 +7837,14 @@ JsSIP.Grammar = (function(){
       
       function parse_Allow() {
         var result0, result1, result2, result3;
-        var pos0, pos1;
+        var pos0, pos1, pos2;
         
         pos0 = pos;
+        pos1 = pos;
         result0 = parse_allow_method();
         if (result0 !== null) {
           result1 = [];
-          pos1 = pos;
+          pos2 = pos;
           result2 = parse_COMMA();
           if (result2 !== null) {
             result3 = parse_allow_method();
@@ -7845,15 +7852,15 @@ JsSIP.Grammar = (function(){
               result2 = [result2, result3];
             } else {
               result2 = null;
-              pos = pos1;
+              pos = pos2;
             }
           } else {
             result2 = null;
-            pos = pos1;
+            pos = pos2;
           }
           while (result2 !== null) {
             result1.push(result2);
-            pos1 = pos;
+            pos2 = pos;
             result2 = parse_COMMA();
             if (result2 !== null) {
               result3 = parse_allow_method();
@@ -7861,21 +7868,28 @@ JsSIP.Grammar = (function(){
                 result2 = [result2, result3];
               } else {
                 result2 = null;
-                pos = pos1;
+                pos = pos2;
               }
             } else {
               result2 = null;
-              pos = pos1;
+              pos = pos2;
             }
           }
           if (result1 !== null) {
             result0 = [result0, result1];
           } else {
             result0 = null;
-            pos = pos0;
+            pos = pos1;
           }
         } else {
           result0 = null;
+          pos = pos1;
+        }
+        if (result0 !== null) {
+          result0 = (function(offset) {
+        				 data = data.methods; })(pos0);
+        }
+        if (result0 === null) {
           pos = pos0;
         }
         return result0;
@@ -7951,6 +7965,22 @@ JsSIP.Grammar = (function(){
       }
       
       function parse_Call_ID() {
+        var result0;
+        var pos0;
+        
+        pos0 = pos;
+        result0 = parse_call_id();
+        if (result0 !== null) {
+          result0 = (function(offset, call_id) {
+                      data = call_id; })(pos0, result0);
+        }
+        if (result0 === null) {
+          pos = pos0;
+        }
+        return result0;
+      }
+      
+      function parse_call_id() {
         var result0, result1, result2;
         var pos0, pos1, pos2;
         
@@ -7993,7 +8023,7 @@ JsSIP.Grammar = (function(){
         }
         if (result0 !== null) {
           result0 = (function(offset) {
-                      data = input.substring(pos, offset); })(pos0);
+                      return input.substring(pos, offset); })(pos0);
         }
         if (result0 === null) {
           pos = pos0;
@@ -10486,6 +10516,73 @@ JsSIP.Grammar = (function(){
         return result0;
       }
       
+      function parse_Refer_To() {
+        var result0, result1, result2, result3;
+        var pos0, pos1, pos2;
+        
+        pos0 = pos;
+        pos1 = pos;
+        result0 = parse_SIP_URI_noparams();
+        if (result0 === null) {
+          result0 = parse_name_addr();
+        }
+        if (result0 !== null) {
+          result1 = [];
+          pos2 = pos;
+          result2 = parse_SEMI();
+          if (result2 !== null) {
+            result3 = parse_generic_param();
+            if (result3 !== null) {
+              result2 = [result2, result3];
+            } else {
+              result2 = null;
+              pos = pos2;
+            }
+          } else {
+            result2 = null;
+            pos = pos2;
+          }
+          while (result2 !== null) {
+            result1.push(result2);
+            pos2 = pos;
+            result2 = parse_SEMI();
+            if (result2 !== null) {
+              result3 = parse_generic_param();
+              if (result3 !== null) {
+                result2 = [result2, result3];
+              } else {
+                result2 = null;
+                pos = pos2;
+              }
+            } else {
+              result2 = null;
+              pos = pos2;
+            }
+          }
+          if (result1 !== null) {
+            result0 = [result0, result1];
+          } else {
+            result0 = null;
+            pos = pos1;
+          }
+        } else {
+          result0 = null;
+          pos = pos1;
+        }
+        if (result0 !== null) {
+          result0 = (function(offset) {
+                          try {
+                            data = new JsSIP.NameAddrHeader(data.uri, data.display_name, data.params);
+                          } catch(e) {
+                            data = -1;
+                          }})(pos0);
+        }
+        if (result0 === null) {
+          pos = pos0;
+        }
+        return result0;
+      }
+      
       function parse_Require() {
         var result0, result1, result2, result3;
         var pos0, pos1, pos2;
@@ -11152,6 +11249,165 @@ JsSIP.Grammar = (function(){
         if (result0 !== null) {
           result0 = (function(offset) {
                        data = data.options || []; })(pos0);
+        }
+        if (result0 === null) {
+          pos = pos0;
+        }
+        return result0;
+      }
+      
+      function parse_Target_Dialog() {
+        var result0, result1, result2, result3;
+        var pos0, pos1, pos2;
+        
+        pos0 = pos;
+        pos1 = pos;
+        result0 = parse_call_id();
+        if (result0 !== null) {
+          result1 = [];
+          pos2 = pos;
+          result2 = parse_SEMI();
+          if (result2 !== null) {
+            result3 = parse_td_param();
+            if (result3 !== null) {
+              result2 = [result2, result3];
+            } else {
+              result2 = null;
+              pos = pos2;
+            }
+          } else {
+            result2 = null;
+            pos = pos2;
+          }
+          while (result2 !== null) {
+            result1.push(result2);
+            pos2 = pos;
+            result2 = parse_SEMI();
+            if (result2 !== null) {
+              result3 = parse_td_param();
+              if (result3 !== null) {
+                result2 = [result2, result3];
+              } else {
+                result2 = null;
+                pos = pos2;
+              }
+            } else {
+              result2 = null;
+              pos = pos2;
+            }
+          }
+          if (result1 !== null) {
+            result0 = [result0, result1];
+          } else {
+            result0 = null;
+            pos = pos1;
+          }
+        } else {
+          result0 = null;
+          pos = pos1;
+        }
+        if (result0 !== null) {
+          result0 = (function(offset, call_id) {
+                           data.call_id = call_id; })(pos0, result0[0]);
+        }
+        if (result0 === null) {
+          pos = pos0;
+        }
+        return result0;
+      }
+      
+      function parse_td_param() {
+        var result0;
+        
+        result0 = parse_remote_param();
+        if (result0 === null) {
+          result0 = parse_local_param();
+          if (result0 === null) {
+            result0 = parse_generic_param();
+          }
+        }
+        return result0;
+      }
+      
+      function parse_remote_param() {
+        var result0, result1, result2;
+        var pos0, pos1;
+        
+        pos0 = pos;
+        pos1 = pos;
+        if (input.substr(pos, 10).toLowerCase() === "remote-tag") {
+          result0 = input.substr(pos, 10);
+          pos += 10;
+        } else {
+          result0 = null;
+          if (reportFailures === 0) {
+            matchFailed("\"remote-tag\"");
+          }
+        }
+        if (result0 !== null) {
+          result1 = parse_EQUAL();
+          if (result1 !== null) {
+            result2 = parse_token();
+            if (result2 !== null) {
+              result0 = [result0, result1, result2];
+            } else {
+              result0 = null;
+              pos = pos1;
+            }
+          } else {
+            result0 = null;
+            pos = pos1;
+          }
+        } else {
+          result0 = null;
+          pos = pos1;
+        }
+        if (result0 !== null) {
+          result0 = (function(offset, tag) {
+                           data.remote_tag = tag; })(pos0, result0[2]);
+        }
+        if (result0 === null) {
+          pos = pos0;
+        }
+        return result0;
+      }
+      
+      function parse_local_param() {
+        var result0, result1, result2;
+        var pos0, pos1;
+        
+        pos0 = pos;
+        pos1 = pos;
+        if (input.substr(pos, 9).toLowerCase() === "local-tag") {
+          result0 = input.substr(pos, 9);
+          pos += 9;
+        } else {
+          result0 = null;
+          if (reportFailures === 0) {
+            matchFailed("\"local-tag\"");
+          }
+        }
+        if (result0 !== null) {
+          result1 = parse_EQUAL();
+          if (result1 !== null) {
+            result2 = parse_token();
+            if (result2 !== null) {
+              result0 = [result0, result1, result2];
+            } else {
+              result0 = null;
+              pos = pos1;
+            }
+          } else {
+            result0 = null;
+            pos = pos1;
+          }
+        } else {
+          result0 = null;
+          pos = pos1;
+        }
+        if (result0 !== null) {
+          result0 = (function(offset, tag) {
+                           data.local_tag = tag; })(pos0, result0[2]);
         }
         if (result0 === null) {
           pos = pos0;

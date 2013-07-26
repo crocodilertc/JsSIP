@@ -173,6 +173,15 @@ function parseHeader(message, data, headerStart, headerEnd) {
       message.setHeader('allow', headerValue);
       parsed = message.parseHeader('allow');
       break;
+    case 'refer-to':
+    case 'r':
+      message.setHeader('refer-to', headerValue);
+      parsed = message.parseHeader('refer-to');
+      break;
+    case 'target-dialog':
+      message.setHeader('target-dialog', headerValue);
+      parsed = message.parseHeader('target-dialog');
+      break;
     default:
       // Do not parse this header.
       message.setHeader(headerName, headerValue);

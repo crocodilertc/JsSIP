@@ -57,7 +57,6 @@
     }
   
     extraHeaders.push('Contact: '+ this.session.contact);
-    extraHeaders.push('Allow: '+ JsSIP.Utils.getAllowedMethods(this.session.ua, true));
     if (sdp) {
       extraHeaders.push('Content-Type: application/sdp');
     }
@@ -361,7 +360,7 @@
     this.session.dialog.addSessionTimerResponseHeaders(extraHeaders);
 
     extraHeaders.push('Contact: ' + self.session.contact);
-    extraHeaders.push('Allow: '+ JsSIP.Utils.getAllowedMethods(self.session.ua, true));
+    extraHeaders.push('Allow: '+ JsSIP.Utils.getAllowedMethods(self.session.ua));
     extraHeaders.push('Content-Type: application/sdp');
 
     var replyFailed = function () {

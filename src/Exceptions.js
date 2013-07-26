@@ -41,6 +41,17 @@ Exceptions= {
     };
     exception.prototype = new Error();
     return exception;
+  }()),
+
+  RemoteSupportError: (function(){
+    var exception = function(option) {
+      this.code = 4;
+      this.name = 'REMOTE_SUPPORT_ERROR';
+      this.option = option;
+      this.message = 'Remote UA does not support method/extension: ' + option;
+    };
+    exception.prototype = new Error();
+    return exception;
   }())
 };
 

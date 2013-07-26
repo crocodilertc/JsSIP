@@ -28,7 +28,7 @@ OutgoingRequest = function(method, ruri, ua, params, extraHeaders, body) {
     from,
     call_id,
     cseq,
-    extra_extensions;
+    supported;
 
   params = params || {};
 
@@ -89,9 +89,16 @@ OutgoingRequest = function(method, ruri, ua, params, extraHeaders, body) {
   this.cseq = cseq;
   this.setHeader('cseq', cseq + ' ' + method);
 
+  // Allow
+  if (method !== JsSIP.C.CANCEL && method !== JsSIP.C.ACK) {
+    this.setHeader('allow', JsSIP.Utils.getAllowedMethods(ua));
+  }
+
   // Supported
-  extra_extensions = params.extra_extensions || '';
-  this.setHeader('supported', JsSIP.UA.C.SUPPORTED + extra_extensions);
+  if (method !== JsSIP.C.ACK) {
+    supported = JsSIP.Utils.getSupportedExtensions(ua, params.extra_supported);
+    this.setHeader('supported', supported.join(','));
+  }
 };
 
 OutgoingRequest.prototype = {

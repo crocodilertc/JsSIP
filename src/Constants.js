@@ -23,6 +23,7 @@ JsSIP.C= {
     REQUEST_TIMEOUT:          'Request Timeout',
     SIP_FAILURE_CODE:         'SIP Failure Code',
     INVALID_TARGET:           'Invalid Target',
+    INVALID_REFER_TO_TARGET:  'Invalid Refer-To Target',
     INTERNAL_ERROR:           'Internal Error',
 
     // SIP error causes
@@ -72,6 +73,14 @@ JsSIP.C= {
   REGISTER:   'REGISTER',
   UPDATE:     'UPDATE',
   SUBSCRIBE:  'SUBSCRIBE',
+  REFER:      'REFER',
+
+  // SIP Extensions
+  SIP_EXTENSIONS: {
+    TIMER: 'timer',             // RFC 4028
+    TARGET_DIALOG: 'tdialog',   // RFC 4538
+    GRUU: 'gruu'
+  },
 
   /* SIP Response Reasons
    * DOC: http://www.iana.org/assignments/sip-parameters

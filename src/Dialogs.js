@@ -11,7 +11,7 @@
  * @param {Enum} state JsSIP.Dialog.C.STATUS_EARLY / JsSIP.Dialog.C.STATUS_CONFIRMED
  */
 (function(JsSIP) {
-var Dialog,
+var DialogId, Dialog,
   LOG_PREFIX = JsSIP.name +' | '+ 'DIALOG' +' | ',
   C = {
     // Dialog states
@@ -21,8 +21,24 @@ var Dialog,
     DEFAULT_MIN_SE: 90
   };
 
+DialogId = function (call_id, local_tag, remote_tag) {
+  this.call_id = call_id;
+  this.local_tag = local_tag;
+  this.remote_tag = remote_tag;
+};
+DialogId.prototype.toString = function () {
+  return this.call_id + this.local_tag + this.remote_tag;
+};
+DialogId.prototype.toTargetDialogHeader = function () {
+  // See RFC 4538
+  // Note: the remote/local labels are from the perspective of the recipient
+  return this.call_id +
+      ';remote-tag=' + this.local_tag +
+      ';local-tag=' + this.remote_tag;
+};
+
 // RFC 3261 12.1
-Dialog = function(session, message, type, state) {
+Dialog = function(owner, message, type, state) {
   var contact;
 
   if(!message.hasHeader('contact')) {
@@ -35,20 +51,16 @@ Dialog = function(session, message, type, state) {
   } else {
     // Create confirmed dialog if state is not defined
     state = state || C.STATUS_CONFIRMED;
+    if (message.method === JsSIP.C.INVITE) {
+      this.last_invite_tx = message.server_transaction;
+    }
   }
 
   contact = message.parseHeader('contact');
 
   // RFC 3261 12.1.1
   if(type === 'UAS') {
-    this.id = {
-      call_id: message.call_id,
-      local_tag: message.to_tag,
-      remote_tag: message.from_tag,
-      toString: function() {
-        return this.call_id + this.local_tag + this.remote_tag;
-      }
-    };
+    this.id = new DialogId(message.call_id, message.to_tag, message.from_tag);
     this.state = state;
     this.remote_seqnum = message.cseq;
     this.local_uri = message.parseHeader('to').uri;
@@ -58,14 +70,7 @@ Dialog = function(session, message, type, state) {
   }
   // RFC 3261 12.1.2
   else if(type === 'UAC') {
-    this.id = {
-      call_id: message.call_id,
-      local_tag: message.from_tag,
-      remote_tag: message.to_tag,
-      toString: function() {
-        return this.call_id + this.local_tag + this.remote_tag;
-      }
-    };
+    this.id = new DialogId(message.call_id, message.from_tag, message.to_tag);
     this.state = state;
     this.local_seqnum = message.cseq;
     this.local_uri = message.parseHeader('from').uri;
@@ -82,8 +87,8 @@ Dialog = function(session, message, type, state) {
       timer_id: null
   };
 
-  this.session = session;
-  session.ua.dialogs[this.id.toString()] = this;
+  this.owner = owner;
+  owner.ua.dialogs[this.id.toString()] = this;
   console.log(LOG_PREFIX +'new ' + type + ' dialog created with status ' + (this.state === C.STATUS_EARLY ? 'EARLY': 'CONFIRMED'));
 };
 
@@ -103,10 +108,14 @@ Dialog.prototype = {
     }
   },
 
+  isConfirmed: function() {
+    return this.state === C.STATUS_CONFIRMED;
+  },
+
   terminate: function() {
     console.log(LOG_PREFIX +'dialog ' + this.id.toString() + ' deleted');
     this.clearSessionRefreshTimer();
-    delete this.session.ua.dialogs[this.id.toString()];
+    delete this.owner.ua.dialogs[this.id.toString()];
   },
 
   /**
@@ -143,7 +152,7 @@ Dialog.prototype = {
     request = new JsSIP.OutgoingRequest(
       method,
       this.remote_target,
-      this.session.ua, {
+      this.owner.ua, {
         'cseq': cseq,
         'call_id': this.id.call_id,
         'from_uri': this.local_uri,
@@ -151,7 +160,7 @@ Dialog.prototype = {
         'to_uri': this.remote_uri,
         'to_tag': this.id.remote_tag,
         'route_set': this.route_set,
-        'extra_extensions': JsSIP.Utils.getSessionExtensions(this.session, method)
+        'extra_supported': JsSIP.Utils.getSessionExtensions(this.owner, method)
       }, extraHeaders);
 
     request.dialog = this;
@@ -170,7 +179,7 @@ Dialog.prototype = {
 
     if(!this.remote_seqnum) {
       this.remote_seqnum = request.cseq;
-    } else if(request.method !== JsSIP.C.INVITE && request.cseq < this.remote_seqnum) {
+    } else if(request.cseq < this.remote_seqnum) {
         //Do not try to reply to an ACK request.
         if (request.method !== JsSIP.C.ACK) {
           request.reply(500);
@@ -181,22 +190,16 @@ Dialog.prototype = {
     }
 
     switch(request.method) {
-      // RFC3261 14.2 Modifying an Existing Session -UAS BEHAVIOR-
       case JsSIP.C.INVITE:
-        if(request.cseq < this.remote_seqnum) {
-          if(this.state === C.STATUS_EARLY) {
-            retryAfter = (Math.random() * 10 | 0) + 1;
-            request.reply(500, null, ['Retry-After:'+ retryAfter]);
-          } else {
-            request.reply(500);
-          }
+        // RFC3261 14.2 Modifying an Existing Session -UAS BEHAVIOR-
+        if(this.last_invite_tx &&
+            this.last_invite_tx.state === JsSIP.Transactions.C.STATUS_PROCEEDING) {
+          retryAfter = (Math.random() * 10 | 0) + 1;
+          request.reply(500, null, ['Retry-After:'+ retryAfter]);
           return false;
         }
-        // RFC3261 14.2
-        if(this.state === C.STATUS_EARLY) {
-          request.reply(491);
-          return false;
-        }
+        // Cache the transaction to check next time
+        this.last_invite_tx = request.server_transaction;
         break;
       case JsSIP.C.UPDATE:
         // RFC3311 5.2
@@ -229,7 +232,7 @@ Dialog.prototype = {
       return;
     }
 
-    if(!this.session.receiveRequest(request)) {
+    if(!this.owner.receiveRequest(request)) {
       return;
     }
 
@@ -269,17 +272,17 @@ Dialog.prototype = {
       timeout = interval / 2;
       action = function () {
         self.session_timer.timer_id = null;
-        self.session.emit('refresh', self.session, {});
+        self.session.emit('refresh', self.owner, {});
       };
     } else {
       timeout = interval - Math.max(interval / 3, 32);
       action = function () {
         self.session_timer.timer_id = null;
-        self.session.sendBye({
+        self.owner.sendBye({
           status_code: 408,
           reason_phrase: JsSIP.C.causes.SESSION_TIMER
         });
-        self.session.ended('system', null, JsSIP.C.causes.SESSION_TIMER);
+        self.owner.ended('system', null, JsSIP.C.causes.SESSION_TIMER);
       };
     }
 
@@ -354,5 +357,6 @@ Dialog.prototype = {
 };
 
 Dialog.C = C;
+JsSIP.DialogId = DialogId;
 JsSIP.Dialog = Dialog;
 }(JsSIP));

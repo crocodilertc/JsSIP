@@ -39,7 +39,7 @@ InDialogRequestSender.prototype = {
   receiveResponse: function(response) {
     // RFC3261 14.1. Terminate the dialog if a 408 or 481 is received from a re-Invite.
     if (response.status_code === 408 || response.status_code === 481) {
-      if (this.request.method !== JsSIP.BYE) {
+      if (this.request.method !== JsSIP.C.BYE) {
         // Send a BYE as per section 12.2.1.2.
         this.applicant.session.sendBye({
           status_code: response.status_code,

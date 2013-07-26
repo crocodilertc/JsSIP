@@ -187,7 +187,7 @@ Utils= {
     return '192.0.2.' + getOctet(1, 254);
   },
 
-  getAllowedMethods: function(ua, inDialog) {
+  getAllowedMethods: function(ua) {
     var event,
       allowed = JsSIP.UA.C.ALLOWED_METHODS.toString();
 
@@ -197,24 +197,34 @@ Utils= {
       }
     }
 
-    if (inDialog) {
-      allowed += ',' + JsSIP.C.UPDATE;
-    }
-
     return allowed;
   },
 
-  getSessionExtensions: function(session, method) {
-    var event, option,
-      supported = '';
+  getSupportedExtensions: function(ua, extraExtensions) {
+    var extension, event,
+      supported = JsSIP.UA.C.SUPPORTED_EXTENSIONS.slice();
 
-    for (event in JsSIP.UA.C.SESSION_EVENT_EXTENSIONS) {
+    for (extension in JsSIP.UA.C.EVENT_EXTENSIONS) {
+      event = JsSIP.UA.C.EVENT_EXTENSIONS[extension];
+      if (ua.checkEvent(event) && ua.listeners(event).length > 0) {
+        supported.push(extension);
+      }
+    }
+
+    if (extraExtensions) {
+      return supported.concat(extraExtensions);
+    }
+    return supported;
+  },
+
+  getSessionExtensions: function(session) {
+    var extension, event,
+      supported = [];
+
+    for (extension in JsSIP.UA.C.SESSION_EVENT_EXTENSIONS) {
+      event = JsSIP.UA.C.SESSION_EVENT_EXTENSIONS[extension];
       if (session.checkEvent(event) && session.listeners(event).length > 0) {
-        // Check whether this extension should be added to this method
-        option = JsSIP.UA.C.SESSION_EVENT_EXTENSIONS[event];
-        if (JsSIP.UA.C.EXTENSION_METHODS[option].indexOf(method) >= 0) {
-          supported += ', ' + option;
-        }
+        supported.push(extension);
       }
     }
 

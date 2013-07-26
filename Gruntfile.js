@@ -24,7 +24,8 @@ module.exports = function(grunt) {
     'src/Utils.js',
     'src/SanityCheck.js',
     'src/DigestAuthentication.js',
-    'src/WebRTC.js'
+    'src/WebRTC.js',
+    'src/Refer.js'
   ];
 
   // Project configuration.

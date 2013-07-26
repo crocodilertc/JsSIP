@@ -49,6 +49,9 @@ RTCSession = function(ua) {
   this.dialog = null;
   this.earlyDialogs = {};
   this.rtcMediaHandler = null;
+  this.tones = null;
+  this.allowed = null;
+  this.supported = null;
 
   // Session Timers
   this.timers = {
@@ -58,14 +61,12 @@ RTCSession = function(ua) {
     userNoAnswerTimer: null
   };
 
-  // Session info
+  // Session info (public properties)
   this.direction = null;
   this.local_identity = null;
   this.remote_identity = null;
   this.start_time = null;
   this.end_time = null;
-  this.tones = null;
-  this.allowed = null;
 
   // Custom session empty object for high level use
   this.data = {};
@@ -207,7 +208,7 @@ RTCSession.prototype.answer = function(options) {
 
     // rtcMediaHandler.createAnswer succeeded
     answerCreationSucceeded = function(body) {
-      var
+      var supported,
         // run for reply success callback
         replySucceeded = function() {
           var retransmissions = 1,
@@ -265,7 +266,10 @@ RTCSession.prototype.answer = function(options) {
         };
 
       extraHeaders.push('Contact: ' + self.contact);
-      extraHeaders.push('Allow: '+ JsSIP.Utils.getAllowedMethods(self.ua, true));
+      extraHeaders.push('Allow: '+ JsSIP.Utils.getAllowedMethods(self.ua));
+      supported = JsSIP.Utils.getSupportedExtensions(self.ua,
+          JsSIP.Utils.getSessionExtensions(self, JsSIP.C.INVITE));
+      extraHeaders.push('Supported: ' + supported.join(','));
 
       request.reply(200, null, extraHeaders,
         body,
@@ -468,8 +472,44 @@ RTCSession.prototype.sendUpdate = function(options) {
   update.send(options);
 };
 
+
 /**
- * Checks whether the provided method is present in the Allow header received
+ * Send a REFER
+ *
+ * @param {URI} target
+ * @param {Object} [options]
+ * @param {Object} [options.eventHandlers]
+ * @param {String[]} [options.extraHeaders]
+ * @param {String} [options.contentType]
+ * @param {String} [options.body]
+ */
+RTCSession.prototype.sendRefer = function(refer_uri, options) {
+  var target = this.dialog.remote_target;
+
+  options = options || {};
+  options.targetDialog = this.dialog;
+
+  // First check: do they support REFER at all
+  if (!this.isMethodAllowed(JsSIP.C.REFER, false)) {
+    throw new JsSIP.Exceptions.RemoteSupportError(JsSIP.C.REFER);
+  }
+  // Next check: can we use out-of-dialog REFER
+  // We don't support in-dialog REFER, because it's nasty (see RFC 5589, 5057)
+  if (!this.isOptionSupported(JsSIP.C.SIP_EXTENSIONS.GRUU ||
+      !target.hasParam('gr'))) {
+    throw new JsSIP.Exceptions.RemoteSupportError(JsSIP.C.SIP_EXTENSIONS.GRUU);
+  }
+  if (!this.isOptionSupported(JsSIP.C.SIP_EXTENSIONS.TARGET_DIALOG)) {
+    throw new JsSIP.Exceptions.RemoteSupportError(JsSIP.C.SIP_EXTENSIONS.TARGET_DIALOG);
+  }
+
+  var refer = new JsSIP.Refer(this.ua);
+  refer.send(target, refer_uri, options);
+};
+
+
+/**
+ * Checks whether the provided method is present in an Allow header received
  * from the remote party.  If an Allow header has not been received, the
  * provided default is returned instead.
  * @param {String} method The SIP method to check.
@@ -482,6 +522,21 @@ RTCSession.prototype.isMethodAllowed = function(method, defaultValue) {
     return defaultValue;
   }
   if (this.allowed.indexOf(method) >= 0) {
+    return true;
+  }
+  return false;
+};
+
+
+/**
+ * Checks whether the provided option is present in a Supported header received
+ * from the remote party.  If a Supported header has not been received, the
+ * assumption is that no options are supported.
+ * @param {String} option The SIP option/extension to check.
+ * @returns {Boolean}
+ */
+RTCSession.prototype.isOptionSupported = function(option) {
+  if (this.supported && this.supported.indexOf(option) >= 0) {
     return true;
   }
   return false;
@@ -534,7 +589,11 @@ RTCSession.prototype.init_incoming = function(request) {
 
   // Store the allowed methods if provided
   if(request.hasHeader('allow')) {
-    this.allowed = request.parseHeader('allow').methods;
+    this.allowed = request.parseHeader('allow');
+  }
+  // Store the supported options if provided
+  if(request.hasHeader('supported')) {
+    this.supported = request.parseHeader('supported');
   }
 
   //Get the Expires header value if exists
@@ -673,7 +732,7 @@ RTCSession.prototype.connect = function(target, options) {
 
   requestParams = {
       from_tag: this.from_tag,
-      extra_extensions: JsSIP.Utils.getSessionExtensions(this, JsSIP.C.INVITE)
+      extra_supported: JsSIP.Utils.getSessionExtensions(this, JsSIP.C.INVITE)
   };
 
   this.contact = this.ua.contact.toString({
@@ -692,7 +751,6 @@ RTCSession.prototype.connect = function(target, options) {
   request = new JsSIP.OutgoingRequest(JsSIP.C.INVITE, target, this.ua, requestParams, extraHeaders);
   this.request = request;
   request.setHeader('contact', this.contact);
-  request.setHeader('allow', JsSIP.Utils.getAllowedMethods(this.ua, true));
   request.setHeader('content-type', 'application/sdp');
 
   this.id = this.request.call_id + this.from_tag;
@@ -1086,7 +1144,11 @@ RTCSession.prototype.receiveInviteResponse = function(response) {
 
       // Store the allowed methods if provided
       if(response.hasHeader('allow')) {
-        this.allowed = response.parseHeader('allow').methods;
+        this.allowed = response.parseHeader('allow');
+      }
+      // Store the supported options if provided
+      if(response.hasHeader('supported')) {
+        this.supported = response.parseHeader('supported');
       }
 
       this.dialog.processSessionTimerHeaders(response);
