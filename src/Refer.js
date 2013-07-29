@@ -367,6 +367,7 @@
    * @param {String} [options.body]
    */
   Refer.prototype.notify = function(options) {
+    options = options || {};
     // TODO
   };
 
