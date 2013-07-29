@@ -268,8 +268,43 @@
   };
 
   /**
-   * Accept the incoming Refer
-   * Only valid for incoming Refers
+   * Call the refer URI. The referrer will be notified of the progress and
+   * result of the call establishment process.
+   *
+   * @param {Object} [options]
+   * Call options as used with the <code>UA.call</code> method.
+   *
+   * @throws {TypeError}
+   * @throws {JsSIP.Exceptions.InvalidTargetError}
+   */
+  Refer.prototype.call = function(options) {
+    var session,
+      uri = this.refer_uri;
+
+    if (uri.scheme !== JsSIP.C.SIP) {
+      throw new JsSIP.Exceptions.InvalidTargetError(uri);
+    }
+
+    session = new JsSIP.RTCSession(this.ua);
+    session.connect(uri, options);
+
+    // TODO: set up handlers to send appropriate notify messages
+  };
+
+  /**
+   * Accept the incoming Refer. Use this for non-SIP refer URIs; for SIP URIs
+   * use the <code>call</code> method instead.
+   * <p>
+   * After calling this method, the application should call the
+   * <code>notify</code> method to inform the referrer of the progress/result
+   * of the refer. This is handled automatically if the <code>call</code>
+   * method is used instead.
+   * 
+   * @param {Object} [options]
+   * @param {String[]} [options.extraHeaders]
+   * Extra headers to add to the response.
+   * @param {String} [options.body]
+   * A message body to include in the response.
    */
   Refer.prototype.accept = function(options) {
     options = options || {};
@@ -289,11 +324,13 @@
   };
 
   /**
-   * Reject the incoming Refer
-   * Only valid for incoming Refers
+   * Reject the incoming Refer.
    *
-   * @param {Number} status_code
-   * @param {String} [reason_phrase]
+   * @param {Object} [options]
+   * @param {Number} [options.status_code]
+   * @param {String} [options.reason_phrase]
+   * @param {String[]} [options.extraHeaders]
+   * @param {String} [options.body]
    */
   Refer.prototype.reject = function(options) {
     options = options || {};
@@ -317,13 +354,31 @@
   };
 
   /**
-   * Receives further messages on the Refer dialog (i.e. NOTIFYs).
+   * Notify the referrer of the current refer progress, or final result.
+   * <p>
+   * The application should either provide a SIP status code, or a message body
+   * of type <code>message/sipfrag</code>.  If neither is provided, a
+   * <code>100 Trying</code> message will be constructed.
+   *
+   * @param {Object} [options]
+   * @param {Number} [options.status_code]
+   * @param {String} [options.reason_phrase]
+   * @param {String[]} [options.extraHeaders]
+   * @param {String} [options.body]
+   */
+  Refer.prototype.notify = function(options) {
+    // TODO
+  };
+
+  /**
+   * Receives further messages on the Refer dialog (i.e. NOTIFYs for outgoing
+   * refers, and possibly SUBSCRIBEs for incoming refers).
    * @private
    * @param {IncomingRequest} request
    */
   Refer.prototype.receiveRequest = function(request) {
     // TODO
-    request.reply(200);
+    request.reply(481);
   };
 
   JsSIP.Refer = Refer;
