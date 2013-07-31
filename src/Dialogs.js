@@ -272,7 +272,7 @@ Dialog.prototype = {
       timeout = interval / 2;
       action = function () {
         self.session_timer.timer_id = null;
-        self.session.emit('refresh', self.owner, {});
+        self.owner.emit('refresh', self.owner, {});
       };
     } else {
       timeout = interval - Math.max(interval / 3, 32);

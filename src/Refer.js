@@ -40,8 +40,8 @@
     var request_sender, event, contentType, eventHandlers, extraHeaders, request,
       events = [
         'accepted',
-        'succeeded',
-        'failed'
+        'failed',
+        'notify'
       ],
       failCause = null;
 
