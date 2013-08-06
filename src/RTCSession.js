@@ -1026,7 +1026,6 @@ RTCSession.prototype.sendInitialRequest = function(constraints) {
      return;
    }
 
-   request_sender = new JsSIP.RequestSender(self, this.ua),
    self.request.body = offer;
    self.status = C.STATUS_INVITE_SENT;
    request_sender.send();
