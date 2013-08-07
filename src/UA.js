@@ -35,7 +35,8 @@ var UA,
       'ACK',
       'CANCEL',
       'BYE',
-      'OPTIONS'
+      'OPTIONS',
+      'NOTIFY'
     ],
 
     ACCEPTED_BODY_TYPES: [
@@ -455,7 +456,7 @@ UA.prototype.onTransportConnected = function(transport) {
  * @param {JsSIP.IncomingRequest} request.
  */
 UA.prototype.receiveRequest = function(request) {
-  var dialog, session, message,
+  var dialog, session, message, refer,
     method = request.method;
 
   // Check that Ruri points to us
@@ -568,7 +569,7 @@ UA.prototype.receiveRequest = function(request) {
          */
         break;
       case JsSIP.C.REFER:
-        var refer = new JsSIP.Refer(this);
+        refer = new JsSIP.Refer(this);
         refer.init_incoming(request);
         break;
       default:
@@ -578,27 +579,38 @@ UA.prototype.receiveRequest = function(request) {
   } else {
     // In-dialog request
     dialog = this.findDialog(request);
-
     if(dialog) {
       dialog.receiveRequest(request);
-    } else if (method === JsSIP.C.NOTIFY) {
+      return;
+    }
+
+    if (method === JsSIP.C.NOTIFY) {
+      // Notify may be dialog-forming - find the target session/refer
       session = this.findSession(request);
       if(session) {
         session.receiveRequest(request);
-      } else {
-        console.warn(LOG_PREFIX +'received NOTIFY request for a non existent session');
-        request.reply(481, 'Subscription does not exist');
+        return;
       }
+
+      refer = this.refers[request.call_id + request.to_tag];
+      if (refer) {
+        refer.receiveRequest(request);
+        return;
+      }
+
+      console.warn(LOG_PREFIX +'received NOTIFY request for a non existent session');
+      request.reply(481, 'Subscription does not exist');
+      return;
     }
+
     /* RFC3261 12.2.2
      * Request with to tag, but no matching dialog found.
      * Exception: ACK for an Invite request for which a dialog has not
      * been created.
      */
-    else {
-      if(method !== JsSIP.C.ACK) {
-        request.reply(481);
-      }
+    if(method !== JsSIP.C.ACK) {
+      request.reply(481);
+      return;
     }
   }
 };

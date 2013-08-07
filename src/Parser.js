@@ -182,6 +182,15 @@ function parseHeader(message, data, headerStart, headerEnd) {
       message.setHeader('target-dialog', headerValue);
       parsed = message.parseHeader('target-dialog');
       break;
+    case 'event':
+    case 'o':
+      message.setHeader('event', headerValue);
+      parsed = message.parseHeader('event');
+      break;
+    case 'subscription-state':
+      message.setHeader('subscription-state', headerValue);
+      parsed = message.parseHeader('subscription-state');
+      break;
     default:
       // Do not parse this header.
       message.setHeader(headerName, headerValue);
@@ -198,10 +207,11 @@ function parseHeader(message, data, headerStart, headerEnd) {
 /** Parse SIP Message
  * @function
  * @param {String} message SIP message.
+ * @param {Boolean} Indicates a SIP fragment message (RFC 3420).
  * @returns {JsSIP.IncomingRequest|JsSIP.IncomingResponse|undefined}
  */
 Parser = {};
-Parser.parseMessage = function(data) {
+Parser.parseMessage = function(data, sipfrag) {
   var message, firstLine, contentLength, bodyStart, parsed,
     headerStart = 0,
     headerEnd = data.indexOf('\r\n');
@@ -234,7 +244,7 @@ Parser.parseMessage = function(data) {
   /* Loop over every line in data. Detect the end of each header and parse
   * it or simply add to the headers collection.
   */
-  while(true) {
+  while(headerStart < data.length) {
     headerEnd = getHeader(data, headerStart);
 
     // The SIP message has normally finished.
@@ -244,7 +254,13 @@ Parser.parseMessage = function(data) {
     }
     // data.indexOf returned -1 due to a malformed message.
     else if(headerEnd === -1) {
-      return;
+      if (sipfrag) {
+        // Allowed to not end headers with an empty line, if there is no body
+        break;
+      } else {
+        // Malformed message
+        return;
+      }
     }
 
     parsed = parseHeader(message, data, headerStart, headerEnd);
@@ -256,15 +272,17 @@ Parser.parseMessage = function(data) {
     headerStart = headerEnd + 2;
   }
 
-  /* RFC3261 18.3.
-   * If there are additional bytes in the transport packet
-   * beyond the end of the body, they MUST be discarded.
-   */
-  if(message.hasHeader('content-length')) {
-    contentLength = message.getHeader('content-length');
-    message.body = data.substr(bodyStart, contentLength);
-  } else {
-    message.body = data.substring(bodyStart);
+  if (bodyStart) {
+    /* RFC3261 18.3.
+     * If there are additional bytes in the transport packet
+     * beyond the end of the body, they MUST be discarded.
+     */
+    if(message.hasHeader('content-length')) {
+      contentLength = message.getHeader('content-length');
+      message.body = data.substr(bodyStart, contentLength);
+    } else {
+      message.body = data.substring(bodyStart);
+    }
   }
 
   return message;

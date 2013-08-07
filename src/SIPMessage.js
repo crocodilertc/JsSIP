@@ -354,12 +354,19 @@ IncomingRequest.prototype.reply = function(code, reason, extraHeaders, body, onS
 
   response = 'SIP/2.0 ' + code + ' ' + reason + '\r\n';
 
-  if(this.method === JsSIP.C.INVITE && code > 100 && code <= 200) {
-    rr = this.countHeader('record-route');
+  switch (this.method) {
+  case JsSIP.C.INVITE:
+  case JsSIP.C.REFER:
+  case JsSIP.C.SUBSCRIBE:
+  case JsSIP.C.NOTIFY:
+    if(code > 100 && code <= 200) {
+      rr = this.countHeader('record-route');
 
-    for(r; r < rr; r++) {
-      response += 'Record-Route: ' + this.getHeader('record-route', r) + '\r\n';
+      for(r; r < rr; r++) {
+        response += 'Record-Route: ' + this.getHeader('record-route', r) + '\r\n';
+      }
     }
+    break;
   }
 
   vias = this.countHeader('via');

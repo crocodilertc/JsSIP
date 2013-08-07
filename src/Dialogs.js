@@ -126,7 +126,8 @@ Dialog.prototype = {
 
   // RFC 3261 12.2.1.1
   createRequest: function(method, extraHeaders) {
-    var cseq, request;
+    var cseq, request,
+      extra_supported = null;
     extraHeaders = extraHeaders || [];
 
     if(!this.local_seqnum) { this.local_seqnum = Math.floor(Math.random() * 10000); }
@@ -149,6 +150,10 @@ Dialog.prototype = {
       }
     }
 
+    if (this.owner instanceof JsSIP.RTCSession) {
+      extra_supported = JsSIP.Utils.getSessionExtensions(this.owner, method);
+    }
+
     request = new JsSIP.OutgoingRequest(
       method,
       this.remote_target,
@@ -160,7 +165,7 @@ Dialog.prototype = {
         'to_uri': this.remote_uri,
         'to_tag': this.id.remote_tag,
         'route_set': this.route_set,
-        'extra_supported': JsSIP.Utils.getSessionExtensions(this.owner, method)
+        'extra_supported': extra_supported
       }, extraHeaders);
 
     request.dialog = this;

@@ -534,6 +534,8 @@ CSeq_method   = Method
 Expires     = expires: delta_seconds {data = expires; }
 
 
+// EVENT
+
 Event             = event_type: event_type ( SEMI event_param )* {
                        data.event = event_type.join('').toLowerCase(); }
 
@@ -544,6 +546,7 @@ event_package     = token_nodot
 event_template    = token_nodot
 
 event_param       = generic_param
+
 
 // FROM
 
