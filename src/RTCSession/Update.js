@@ -172,6 +172,8 @@
     this.session.dialog.processSessionTimerHeaders(this.request);
     this.session.dialog.addSessionTimerResponseHeaders(extraHeaders);
 
+    extraHeaders.push('Contact: ' + this.session.contact);
+
     this.request.reply(200, null, extraHeaders, body);
     this.accepted = true;
   };

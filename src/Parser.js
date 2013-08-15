@@ -259,6 +259,7 @@ Parser.parseMessage = function(data, sipfrag) {
         break;
       } else {
         // Malformed message
+        console.warn(LOG_PREFIX +'error parsing message: no empty line terminating headers');
         return;
       }
     }
@@ -266,6 +267,7 @@ Parser.parseMessage = function(data, sipfrag) {
     parsed = parseHeader(message, data, headerStart, headerEnd);
 
     if(!parsed) {
+      console.warn(LOG_PREFIX +'error parsing header: "' + data.substring(headerStart, headerEnd) + '"');
       return;
     }
 

@@ -14,6 +14,7 @@ var RTCMediaHandler = @@include('../src/RTCSession/RTCMediaHandler.js')
 var DTMF            = @@include('../src/RTCSession/DTMF.js')
 var Reinvite        = @@include('../src/RTCSession/Reinvite.js')
 var Update          = @@include('../src/RTCSession/Update.js')
+var Refer           = @@include('../src/RTCSession/Refer.js')
 
 var RTCSession,
   LOG_PREFIX = JsSIP.name +' | '+ 'RTC SESSION' +' | ',
@@ -52,6 +53,8 @@ RTCSession = function(ua) {
   this.tones = null;
   this.allowed = null;
   this.supported = null;
+  this.incoming_refer = null;
+  this.outgoing_refer = null;
 
   // Session Timers
   this.timers = {
@@ -484,27 +487,35 @@ RTCSession.prototype.sendUpdate = function(options) {
  * @param {String} [options.body]
  */
 RTCSession.prototype.sendRefer = function(refer_uri, options) {
-  var target = this.dialog.remote_target;
+  var refer,
+    target = this.dialog.remote_target;
 
   options = options || {};
   options.targetDialog = this.dialog;
 
-  // First check: do they support REFER at all
+  // Do they support REFER?
   if (!this.isMethodAllowed(JsSIP.C.REFER, false)) {
     throw new JsSIP.Exceptions.RemoteSupportError(JsSIP.C.REFER);
   }
-  // Next check: can we use out-of-dialog REFER
-  // We don't support in-dialog REFER, because it's nasty (see RFC 5589, 5057)
-  if (!this.isOptionSupported(JsSIP.C.SIP_EXTENSIONS.GRUU ||
-      !target.hasParam('gr'))) {
-    throw new JsSIP.Exceptions.RemoteSupportError(JsSIP.C.SIP_EXTENSIONS.GRUU);
-  }
-  if (!this.isOptionSupported(JsSIP.C.SIP_EXTENSIONS.TARGET_DIALOG)) {
-    throw new JsSIP.Exceptions.RemoteSupportError(JsSIP.C.SIP_EXTENSIONS.TARGET_DIALOG);
+
+  // Can we use out-of-dialog REFER?
+  if (this.isOptionSupported(JsSIP.C.SIP_EXTENSIONS.GRUU) &&
+      target.hasParam('gr') &&
+      this.isOptionSupported(JsSIP.C.SIP_EXTENSIONS.TARGET_DIALOG)) {
+    refer = new JsSIP.Refer(this.ua);
+    refer.send(target, refer_uri, options);
+    return;
   }
 
-  var refer = new JsSIP.Refer(this.ua);
-  refer.send(target, refer_uri, options);
+  // Resort to in-dialog refer
+  refer = this.outgoing_refer;
+  if (refer && !refer.closed) {
+    throw new JsSIP.Exceptions.InvalidStateError('Refer in progress');
+  }
+
+  refer = new Refer(this);
+  refer.send(refer_uri, options);
+  this.outgoing_refer = refer;
 };
 
 
@@ -797,6 +808,15 @@ RTCSession.prototype.close = function() {
 
   // 2nd Step. Terminate signaling.
 
+  // Close down any refers sharing the dialog
+  if(this.incoming_refer) {
+    this.incoming_refer.close();
+  }
+
+  if(this.outgoing_refer) {
+    this.outgoing_refer.close();
+  }
+
   // Clear session timers
   for(idx in this.timers) {
     window.clearTimeout(this.timers[idx]);
@@ -894,7 +914,7 @@ RTCSession.prototype.createDialog = function(message, type, early) {
  * @returns true if the request is accepted, false otherwise
  */
 RTCSession.prototype.receiveRequest = function(request) {
-  var contentType;
+  var contentType, reinvite, update, refer, eventHeader;
 
   if(request.method === JsSIP.C.CANCEL) {
     /* RFC3261 15 States that a UAS may have accepted an invitation while a CANCEL
@@ -955,7 +975,7 @@ RTCSession.prototype.receiveRequest = function(request) {
           return false;
         }
       }
-      var reinvite = new Reinvite(this);
+      reinvite = new Reinvite(this);
       reinvite.init_incoming(request);
       this.lastReinvite = reinvite;
       break;
@@ -968,8 +988,51 @@ RTCSession.prototype.receiveRequest = function(request) {
       }
       break;
     case JsSIP.C.UPDATE:
-      var update = new Update(this);
+      update = new Update(this);
       return update.init_incoming(request);
+    case JsSIP.C.REFER:
+      if (this.incoming_refer && !this.incoming_refer.closed) {
+        request.reply(491, 'Existing Refer In Progress');
+        return false;
+      }
+      refer = new Refer(this);
+      this.incoming_refer = refer;
+      return refer.init_incoming(request);
+    case JsSIP.C.NOTIFY:
+      if (!request.hasHeader('event')) {
+        request.reply(400, 'Missing Event Header');
+        return false;
+      }
+      eventHeader = request.parseHeader('event');
+      if (eventHeader && eventHeader.event === 'refer') {
+        refer = this.outgoing_refer;
+        if (refer) {
+          return refer.receiveRequest(request);
+        }
+        // RFC 6665 section 4.1.3 says we MUST send a 481 unless another
+        // 4xx/5xx response is more appropriate - note that this will tear down
+        // the INVITE session as well.
+        request.reply(481, 'Subscription Does Not Exist');
+        return false;
+      }
+      request.reply(489);
+      return false;
+    case JsSIP.C.SUBSCRIBE:
+      if (!request.hasHeader('event')) {
+        request.reply(400, 'Missing Event Header');
+        return false;
+      }
+      eventHeader = request.parseHeader('event');
+      if (eventHeader && eventHeader.event === 'refer') {
+        refer = this.incoming_refer;
+        if (refer) {
+          return refer.receiveRequest(request);
+        }
+        request.reply(403);
+        return false;
+      }
+      request.reply(489);
+      return false;
   }
 
   return true;

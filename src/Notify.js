@@ -66,7 +66,9 @@
       request.body = options.body;
     }
   
-    request_sender = new JsSIP.InDialogRequestSender(this);
+    // Don't use InDialogRequestSender, as we don't need the special 408/481
+    // response handling - any error terminates the subscribe dialog.
+    request_sender = new JsSIP.RequestSender(this, this.session.ua);
   
     this.session.emit('notify', this.session, {
       originator: 'local',

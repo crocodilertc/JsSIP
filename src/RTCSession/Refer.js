@@ -4,34 +4,33 @@
 
 /**
  * @param {JsSIP} JsSIP - The JsSIP namespace
+ * @returns The Refer constructor
  */
 (function(JsSIP) {
   var Refer,
-    LOG_PREFIX = JsSIP.name +' | '+ 'REFER' +' | ',
+    LOG_PREFIX = JsSIP.name +' | '+ 'IN-DIALOG REFER' +' | ',
     DEFAULT_EXPIRES = 3 * 60 * 1000;
 
   /**
-   * @class Class representing an out-of-dialog SIP REFER request.
+   * @class Class representing an in-dialog SIP REFER request.
    * @augments EventEmitter
-   * @param {JsSIP.UA} ua
+   * @param {JsSIP.RTCSession} session
    */
-  Refer = function(ua) {
+  Refer = function(session) {
     var events = [
       'accepted',
       'failed',
       'notify'
     ];
 
-    this.ua = ua;
-    this.targetDialog = null;
+    this.session = session;
+    this.ua = session.ua;
     this.closed = false;
     this.request = null;
-    this.local_tag = null;
-    this.remote_tag = null;
     this.id = null;
-    this.contact = null;
+    this.contact = session.contact;
     this.notify_timer = null;
-    this.dialog = null;
+    this.dialog = session.dialog;
     this.subscription_state = 'pending';
     this.subscription_expires = null;
     this.expire_timer = null;
@@ -41,8 +40,6 @@
 
     // Public properties
     this.direction = null;
-    this.local_identity = null;
-    this.remote_identity = null;
     this.refer_uri = null;
 
     // Custom Refer empty object for high level use
@@ -52,14 +49,20 @@
   };
   Refer.prototype = new JsSIP.EventEmitter();
 
-  Refer.prototype.send = function(target, refer_uri, options) {
+  Refer.prototype.send = function(refer_uri, options) {
     var request_sender, event, contentType, eventHandlers, extraHeaders, request,
       failCause = null;
 
-    if (target === undefined || refer_uri === undefined) {
+    if (refer_uri === undefined) {
       throw new TypeError('Not enough arguments');
     }
 
+    // Check RTCSession Status
+    if (this.session.status !== JsSIP.RTCSession.C.STATUS_CONFIRMED &&
+        this.session.status !== JsSIP.RTCSession.C.STATUS_WAITING_FOR_ACK) {
+      throw new JsSIP.Exceptions.InvalidStateError(this.session.status);
+    }
+  
     // Get call options
     options = options || {};
     extraHeaders = options.extraHeaders || [];
@@ -69,14 +72,6 @@
     // Set event handlers
     for (event in eventHandlers) {
       this.on(event, eventHandlers[event]);
-    }
-
-    // Check target validity
-    try {
-      target = JsSIP.Utils.normalizeURI(target, this.ua.configuration.hostport_params);
-    } catch(e) {
-      target = JsSIP.URI.parse(JsSIP.C.INVALID_TARGET_URI);
-      failCause = JsSIP.C.causes.INVALID_TARGET;
     }
 
     // Check refer-to validity
@@ -89,33 +84,21 @@
 
     // Refer parameter initialization
     this.direction = 'outgoing';
-    this.local_identity = this.ua.configuration.uri;
-    this.remote_identity = target;
     this.refer_uri = refer_uri;
-    this.local_tag = JsSIP.Utils.newTag();
-    this.contact = this.ua.contact.toString({outbound: true});
 
-    request = new JsSIP.OutgoingRequest(JsSIP.C.REFER, target, this.ua,
-        {from_tag: this.local_tag}, extraHeaders, options.body);
+    request = this.dialog.createRequest(JsSIP.C.REFER, extraHeaders);
     this.request = request;
-    this.id = request.call_id + this.local_tag;
-
-    this.ua.refers[this.id] = this;
+    this.id = request.call_id + this.dialog.id.local_tag;
 
     request.setHeader('contact', this.contact);
     request.setHeader('refer-to', refer_uri);
 
-    if (options.targetDialog) {
-      this.targetDialog = options.targetDialog;
-      request.setHeader('require', JsSIP.C.SIP_EXTENSIONS.TARGET_DIALOG);
-      request.setHeader('target-dialog', options.targetDialog.id.toTargetDialogHeader());
-    }
-
     if(options.body) {
       request.setHeader('content-type', contentType);
+      request.body = options.body;
     }
 
-    request_sender = new JsSIP.RequestSender(this, this.ua);
+    request_sender = new RequestSender(this);
 
     this.ua.emit('newRefer', this.ua, {
       originator: 'local',
@@ -146,6 +129,7 @@
     if(this.closed) {
       return;
     }
+
     switch(true) {
       case /^1[0-9]{2}$/.test(response.status_code):
         // Ignore provisional responses.
@@ -272,14 +256,7 @@
       this.notify_timer = null;
     }
 
-    // Terminate confirmed dialog
-    if (this.dialog) {
-      this.dialog.terminate();
-      delete this.dialog;
-    }
-
     this.closed = true;
-    delete this.ua.refers[this];
     console.log(LOG_PREFIX + this.id + ' closed');
   };
 
@@ -306,65 +283,34 @@
    * @param {IncomingRequest} request
    */
   Refer.prototype.init_incoming = function(request) {
-    var session = null;
-
     this.direction = 'incoming';
     this.request = request;
-    this.remote_tag = request.from_tag;
     this.id = request.call_id + request.from_tag;
-    this.contact = this.ua.contact.toString();
-    this.local_identity = request.to.uri;
-    this.remote_identity = request.from.uri;
 
     // Check Refer-To header
     if (!request.hasHeader('refer-to')) {
       request.reply(400, 'Missing Refer-To header field');
-      return;
+      return false;
     }
     if (request.countHeader('refer-to') > 1) {
       request.reply(400, 'Too many Refer-To header fields');
-      return;
+      return false;
     }
     this.refer_uri = request.parseHeader('refer-to').uri;
-
-    // Process Target-Dialog header (if present)
-    if (request.hasHeader('target-dialog')) {
-      var td = request.parseHeader('target-dialog');
-      // Local/remote labels should be from recipient's perspective
-      var did = new JsSIP.DialogId(td.call_id, td.local_tag, td.remote_tag);
-      this.targetDialog = this.ua.dialogs[did.toString()] || null;
-    }
-
-    if (this.targetDialog && this.targetDialog.isConfirmed()) {
-      session = this.targetDialog.owner;
-      // Sanity check
-      if (session.dialog !== this.targetDialog ||
-          !session instanceof JsSIP.RTCSession) {
-        session = null;
-      }
-    }
-
-    // Set the to_tag before replying with a response code that will create a dialog.
-    this.local_tag = request.to_tag = JsSIP.Utils.newTag();
-    this.dialog = new JsSIP.Dialog(this, request, 'UAS');
-    if(!this.dialog.id) {
-      request.reply(500, 'Missing Contact header field');
-      return;
-    }
-
-    this.ua.refers[this.id] = this;
 
     console.log(LOG_PREFIX + this.id + ' received');
     this.ua.emit('newRefer', this.ua, {
       originator: 'remote',
       refer: this,
       request: request,
-      session: session
+      session: this.session
     });
 
     if (!this.accepted && !this.rejected) {
       this.accept();
     }
+
+    return this.accepted;
   };
 
   /**
@@ -586,7 +532,7 @@
     this.last_notify_body = body;
 
     notify = new JsSIP.Notify(this);
-    notify.send('refer', stateHeader, {
+    notify.send('refer;id=' + this.request.cseq, stateHeader, {
       extraHeaders: options.extraHeaders,
       eventHandlers: options.eventHandlers,
       content_type: 'message/sipfrag',
@@ -594,6 +540,7 @@
     });
 
     this.subscription_state = newState;
+
     if (!finalNotify) {
       // If the notify fails, terminate the subscription
       notify.on('failed', function(){
@@ -609,24 +556,27 @@
    * refers, and possibly SUBSCRIBEs for incoming refers).
    * @private
    * @param {IncomingRequest} request
+   * @returns <code>true</code> if a success response was sent,
+   * <code>false</code> otherwise.
    */
   Refer.prototype.receiveRequest = function(request) {
     switch (request.method) {
     case JsSIP.C.NOTIFY:
-      this.receiveNotify(request);
-      return;
+      return this.receiveNotify(request);
     case JsSIP.C.SUBSCRIBE:
-      this.receiveSubscribe(request);
-      return;
+      return this.receiveSubscribe(request);
     }
 
     request.reply(405, null, ['Allow: '+ JsSIP.Utils.getAllowedMethods(this.ua)]);
+    return false;
   };
 
   /**
    * Receives NOTIFY messages on the Refer dialog.
    * @private
    * @param {IncomingRequest} request
+   * @returns <code>true</code> if a success response was sent,
+   * <code>false</code> otherwise.
    */
   Refer.prototype.receiveNotify = function(request) {
     var eventHeader, stateHeader, typeHeader, parsed, sessionEvent, extraHeaders,
@@ -636,35 +586,35 @@
         (this.subscription_state !== 'active' &&
             this.subscription_state !== 'pending')) {
       request.reply(481, 'Subscription Does Not Exist');
-      return;
+      return false;
     }
 
     eventHeader = request.parseHeader('event');
     if (!eventHeader || eventHeader.event !== 'refer') {
       request.reply(489);
       this.close();
-      return;
+      return false;
     }
 
     stateHeader = request.parseHeader('subscription-state');
     if (!stateHeader) {
       request.reply(400, 'Missing Subscription-State Header');
       this.close();
-      return;
+      return false;
     }
 
     typeHeader = request.getHeader('content-type');
     if (typeHeader && typeHeader.indexOf('message/sipfrag') < 0) {
       request.reply(415);
       this.close();
-      return;
+      return false;
     }
 
     parsed = JsSIP.Parser.parseMessage(request.body, true);
     if (!parsed || !parsed instanceof JsSIP.IncomingResponse) {
       request.reply(400, 'Bad Message Body');
       this.close();
-      return;
+      return false;
     }
 
     if (this.listeners('notify').length === 0) {
@@ -672,26 +622,7 @@
       request.reply(603);
       this.subscription_state = 'terminated';
       this.close();
-      return;
-    }
-
-    if (!this.dialog) {
-      // Form a dialog based on this request
-      this.remote_tag = request.from_tag;
-      this.dialog = new JsSIP.Dialog(this, request, 'UAS');
-
-      if (!this.dialog.id) {
-        // Probably missing the Contact header
-        console.warn(LOG_PREFIX + this.id + ' dialog creation failed');
-        this.close();
-
-        this.emit('failed', this, {
-          originator: 'remote',
-          message: request,
-          cause: JsSIP.C.causes.INTERNAL_ERROR
-        });
-        return;
-      }
+      return false;
     }
 
     this.subscription_state = stateHeader.state;
@@ -734,6 +665,8 @@
       sessionEvent: sessionEvent,
       finalNotify: finalNotify
     });
+
+    return true;
   };
 
   /**
@@ -746,19 +679,19 @@
 
     if (this.direction !== 'incoming') {
       request.reply(481);
-      return;
+      return false;
     }
 
     if (this.subscription_state !== 'active' &&
         this.subscription_state !== 'terminated') {
       request.reply(403);
-      return;
+      return false;
     }
 
     eventHeader = request.parseHeader('event');
     if (!eventHeader || eventHeader.event !== 'refer') {
       request.reply(489);
-      return;
+      return false;
     }
 
     expires = request.parseHeader('expires');
@@ -774,7 +707,7 @@
       ];
       request.reply(200, null, extraHeaders);
       this.close();
-      return;
+      return true;
     }
 
     if (expires > 0) {
@@ -796,7 +729,8 @@
     ];
     request.reply(200, null, extraHeaders);
     console.log(LOG_PREFIX + this.id + ' subscription extended');
+    return true;
   };
 
-  JsSIP.Refer = Refer;
+  return Refer;
 }(JsSIP));
