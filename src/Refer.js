@@ -629,7 +629,8 @@
    * @param {IncomingRequest} request
    */
   Refer.prototype.receiveNotify = function(request) {
-    var eventHeader, stateHeader, typeHeader, parsed, sessionEvent, extraHeaders,
+    var eventHeader, stateHeader, typeHeader, parsed, sessionEvent,
+      extraHeaders, sipfrag,
       finalNotify = false;
 
     if (this.direction !== 'outgoing' ||
@@ -660,7 +661,14 @@
       return;
     }
 
-    parsed = JsSIP.Parser.parseMessage(request.body, true);
+    sipfrag = request.body;
+    if (!/\r\n$/.test(sipfrag)) {
+      // Strictly this is an invalid sipfrag, but fudge it by appending the
+      // expected end-line characters.
+      sipfrag += '\r\n';
+    }
+
+    parsed = JsSIP.Parser.parseMessage(sipfrag, true);
     if (!parsed || !parsed instanceof JsSIP.IncomingResponse) {
       request.reply(400, 'Bad Message Body');
       this.close();
