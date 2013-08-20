@@ -63,6 +63,15 @@ var NonInviteClientTransactionPrototype = function() {
     window.clearTimeout(this.F);
     window.clearTimeout(this.K);
     delete this.request_sender.ua.transactions.nict[this.id];
+
+    switch (this.state) {
+    case C.STATUS_COMPLETED:
+    case C.STATUS_TERMINATED:
+      // We already processed a response, so don't need to notify the sender
+      return;
+    }
+
+    // Notify the sender of the bad news
     this.request_sender.onTransportError();
   };
 
@@ -139,6 +148,16 @@ var InviteClientTransactionPrototype = function() {
     window.clearTimeout(this.D);
     window.clearTimeout(this.M);
     delete this.request_sender.ua.transactions.ict[this.id];
+
+    switch (this.state) {
+    case C.STATUS_ACCEPTED:
+    case C.STATUS_COMPLETED:
+    case C.STATUS_TERMINATED:
+      // We already processed a response, so don't need to notify the sender
+      return;
+    }
+
+    // Notify the sender of the bad news
     this.request_sender.onTransportError();
   };
 
