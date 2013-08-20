@@ -41,7 +41,7 @@ Registrator = function(ua, transport) {
 
   if(reg_id) {
     this.contact += ';reg-id='+ reg_id;
-    this.contact += ';+sip.instance="<urn:uuid:'+ this.ua.configuration.instance_id+'>"';
+    this.contact += ';+sip.instance="<urn:'+ this.ua.configuration.instance_id+'>"';
   }
 };
 

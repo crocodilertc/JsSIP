@@ -840,7 +840,7 @@ UA.prototype.loadConfig = function(configuration) {
 
   // Instance-id for GRUU
   if (!settings.instance_id) {
-    settings.instance_id = JsSIP.Utils.newUUID();
+    settings.instance_id = 'uuid:' + JsSIP.Utils.newUUID();
   }
 
   // jssip_id instance parameter. Static random tag of length 5
