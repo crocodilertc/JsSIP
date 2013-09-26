@@ -479,7 +479,7 @@ RTCSession.prototype.sendUpdate = function(options) {
 /**
  * Send a REFER
  *
- * @param {URI} target
+ * @param {String|URI} refer_uri
  * @param {Object} [options]
  * @param {Object} [options.eventHandlers]
  * @param {String[]} [options.extraHeaders]
