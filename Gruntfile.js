@@ -26,7 +26,8 @@ module.exports = function(grunt) {
     'src/DigestAuthentication.js',
     'src/WebRTC.js',
     'src/Refer.js',
-    'src/Notify.js'
+    'src/Notify.js',
+    'src/tail.js',
   ];
 
   // Project configuration.
@@ -39,10 +40,7 @@ module.exports = function(grunt) {
  * Copyright (c) 2012-<%= grunt.template.today("yyyy") %> José Luis Millán - Versatica <http://www.versatica.com>\n\
  * Homepage: http://jssip.net\n\
  * License: http://jssip.net/license\n\
- */\n\n\n',
-      footer: '\
-\n\n\nwindow.JsSIP = JsSIP;\n\
-}(window));\n\n'
+ */\n\n\n'
     },
     concat: {
       dist: {
@@ -50,8 +48,7 @@ module.exports = function(grunt) {
         dest: 'dist/<%= pkg.name %>-<%= pkg.version %>.js',
         options: {
           banner: '<%= meta.banner %>',
-          separator: '\n\n\n',
-          footer: '<%= meta.footer %>',
+          separator: '\n\n',
           process: true
         }
       },
@@ -67,8 +64,7 @@ module.exports = function(grunt) {
         dest: 'dist/<%= pkg.name %>-devel.js',
         options: {
           banner: '<%= meta.banner %>',
-          separator: '\n\n\n',
-          footer: '<%= meta.footer %>',
+          separator: '\n\n',
           process: true
         }
       },
@@ -115,10 +111,13 @@ module.exports = function(grunt) {
         boss: true,
         eqnull: true,
         onecase:true,
-        unused:true,
-        supernew: true
-      },
-      globals: {}
+        unused: true,
+        supernew: true,
+        globals: {
+          module: true,
+          define: true
+        }
+      }
     },
     uglify: {
       dist: {
@@ -180,7 +179,6 @@ module.exports = function(grunt) {
       });
     });
   });
-
 
   // Task for building jssip-devel.js (uncompressed), jssip-X.Y.Z.js (uncompressed)
   // and jssip-X.Y.Z.min.js (minified).
