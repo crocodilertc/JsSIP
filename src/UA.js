@@ -113,6 +113,7 @@ UA = function(configuration) {
   };
 
   this.transportRecoverAttempts = 0;
+  this.transportRecoverTimer = null;
 
   /**
    * Load configuration
@@ -274,6 +275,12 @@ UA.prototype.stop = function() {
     return;
   }
 
+  // Prevent any further reconnection attempts
+  if (this.transportRecoverTimer) {
+    window.clearTimeout(this.transportRecoverTimer);
+    this.transportRecoverTimer = null;
+  }
+
   // Close registrator
   if(this.registrator) {
     console.log(LOG_PREFIX +'closing registrator');
@@ -433,6 +440,10 @@ UA.prototype.onTransportError = function(transport) {
     code: transport.lastTransportError.code,
     reason: transport.lastTransportError.reason
   });
+
+  if(this.status === C.STATUS_USER_CLOSED) {
+    return;
+  }
 
   server = this.getNextWsServer();
 
@@ -774,9 +785,10 @@ UA.prototype.recoverTransport = function(ua) {
 
   console.log(LOG_PREFIX + 'next connection attempt in '+ nextRetry +' seconds');
 
-  window.setTimeout(
+  this.transportRecoverTimer = window.setTimeout(
     function(){
       ua.transportRecoverAttempts = count + 1;
+      ua.transportRecoverTimer = null;
       new JsSIP.Transport(ua, server);
     }, nextRetry * 1000);
 };
