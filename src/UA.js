@@ -186,6 +186,27 @@ UA.prototype.isConnected = function() {
 };
 
 /**
+ * Update authentication credentials.
+ * @param {String}
+ * @param {String}
+ */
+UA.prototype.updateCredentials = function(authorization_user, password) {
+  if (authorization_user) {
+    authorization_user = UA.configuration_check.optional.authorization_user(authorization_user);
+    if (authorization_user) {
+      this.configuration.authorization_user = authorization_user;
+    }
+  }
+
+  if (password) {
+    password = UA.configuration_check.optional.password(password);
+    if (password) {
+      this.configuration.password = password;
+    }
+  }
+};
+
+/**
  * Make an outgoing call.
  *
  * @param {String} target
@@ -952,7 +973,7 @@ UA.prototype.loadConfig = function(configuration) {
 UA.configuration_skeleton = (function() {
   var idx,  parameter,
     skeleton = {},
-    parameters = [
+    static_parameters = [
       // Internal parameters
       "jssip_id",
       "register_min_expires",
@@ -965,7 +986,6 @@ UA.configuration_skeleton = (function() {
       "ws_servers",
 
       // Optional user configurable parameters
-      "authorization_user",
       "connection_recovery_max_interval",
       "connection_recovery_min_interval",
       "display_name",
@@ -974,7 +994,6 @@ UA.configuration_skeleton = (function() {
       "handle_media", //true
       "instance_id",
       "no_answer_timeout", // 30 seconds.
-      "password",
       "register_expires", // 600 seconds.
       "registrar_server",
       "stun_servers",
@@ -985,10 +1004,15 @@ UA.configuration_skeleton = (function() {
       // Post-configuration generated parameters
       "via_core_value",
       "via_host"
+    ],
+    variable_parameters = [
+      "authorization_user",
+      "password",
+      "register"
     ];
 
-  for(idx in parameters) {
-    parameter = parameters[idx];
+  for(idx in static_parameters) {
+    parameter = static_parameters[idx];
     skeleton[parameter] = {
       value: '',
       writable: false,
@@ -996,11 +1020,14 @@ UA.configuration_skeleton = (function() {
     };
   }
 
-  skeleton['register'] = {
-    value: '',
-    writable: true,
-    configurable: false
-  };
+  for(idx in variable_parameters) {
+    parameter = variable_parameters[idx];
+    skeleton[parameter] = {
+      value: '',
+      writable: true,
+      configurable: false
+    };
+  }
 
   return skeleton;
 }());
