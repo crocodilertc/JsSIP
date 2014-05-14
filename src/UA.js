@@ -187,20 +187,26 @@ UA.prototype.isConnected = function() {
 };
 
 /**
- * Update authentication credentials.
- * @param {String}
- * @param {String}
+ * Update UA configuration.
+ * @param {Object} configuration
  */
-UA.prototype.updateCredentials = function(authorization_user, password) {
-  if (authorization_user) {
-    authorization_user = UA.configuration_check.optional.authorization_user(authorization_user);
+UA.prototype.updateConfiguration = function(configuration) {
+  if (configuration.ws_servers) {
+    var ws_servers = UA.configuration_check.mandatory.ws_servers(configuration.ws_servers);
+    if (ws_servers) {
+      this.configuration.ws_servers = ws_servers;
+    }
+  }
+
+  if (configuration.authorization_user) {
+    var authorization_user = UA.configuration_check.optional.authorization_user(configuration.authorization_user);
     if (authorization_user) {
       this.configuration.authorization_user = authorization_user;
     }
   }
 
-  if (password) {
-    password = UA.configuration_check.optional.password(password);
+  if (configuration.password) {
+    var password = UA.configuration_check.optional.password(configuration.password);
     if (password) {
       this.configuration.password = password;
     }
@@ -995,7 +1001,6 @@ UA.configuration_skeleton = (function() {
 
       // Mandatory user configurable parameters
       "uri",
-      "ws_servers",
 
       // Optional user configurable parameters
       "connection_recovery_max_interval",
@@ -1018,6 +1023,10 @@ UA.configuration_skeleton = (function() {
       "via_host"
     ],
     variable_parameters = [
+      // Mandatory user configurable parameters
+      "ws_servers",
+
+      // Optional user configurable parameters
       "authorization_user",
       "password",
       "register"
